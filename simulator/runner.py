@@ -1,16 +1,14 @@
 import asyncio
 import json
-import queue
+import os
 import threading
 import time
 
 import aiohttp
-import os
 
 BASE_URL = os.environ.get("OPENAI_BASE_URL", "http://bifrost:8080/v1")
 API_KEY = os.environ.get("OPENAI_API_KEY", "mocked-openai-key-1")
 MODEL = os.environ.get("OPENAI_MODEL", "openai/gpt-4o-mini")
-REDIS_URL = os.environ.get("REDIS_URL", "redis://redis:6379")
 INTERVAL = 2.0  # seconds between requests
 
 _running = False
@@ -18,37 +16,9 @@ _stop_event = threading.Event()
 _thread = None
 _stats = {"total": 0, "errors": 0, "total_latency_ms": 0}
 
-_listeners: list[queue.Queue] = []
-_listeners_lock = threading.Lock()
-
 
 def is_running() -> bool:
     return _running
-
-
-def subscribe() -> queue.Queue:
-    q: queue.Queue = queue.Queue(maxsize=200)
-    with _listeners_lock:
-        _listeners.append(q)
-    return q
-
-
-def unsubscribe(q: queue.Queue):
-    with _listeners_lock:
-        try:
-            _listeners.remove(q)
-        except ValueError:
-            pass
-
-
-def _emit(event_type: str, data: dict):
-    msg = {"type": event_type, "data": data}
-    with _listeners_lock:
-        for q in _listeners:
-            try:
-                q.put_nowait(msg)
-            except queue.Full:
-                pass
 
 
 def start():
@@ -60,7 +30,6 @@ def start():
     _running = True
     _thread = threading.Thread(target=_thread_main, daemon=True)
     _thread.start()
-    _emit("status", {"running": True})
 
 
 def stop():
@@ -69,14 +38,27 @@ def stop():
         return
     _running = False
     _stop_event.set()
-    _emit("status", {"running": False})
 
 
 def _thread_main():
     asyncio.run(_run_loop())
 
 
+async def _emit(event_type: str, data: dict):
+    from channels.layers import get_channel_layer
+    channel_layer = get_channel_layer()
+    if channel_layer is None:
+        return
+    await channel_layer.group_send("simulator", {
+        "type": "simulator.event",
+        "event_type": event_type,
+        "data": data,
+    })
+
+
 async def _run_loop():
+    await _emit("status", {"running": True})
+
     async with aiohttp.ClientSession() as session:
         while not _stop_event.is_set():
             t0 = time.monotonic()
@@ -126,7 +108,7 @@ async def _run_loop():
                 _stats["errors"] += 1
             _stats["total_latency_ms"] += latency_ms
 
-            _emit("result", {
+            await _emit("result", {
                 "latency_ms": latency_ms,
                 "input_tokens": input_tokens,
                 "output_tokens": output_tokens,
@@ -137,7 +119,8 @@ async def _run_loop():
                 "avg_latency_ms": round(_stats["total_latency_ms"] / _stats["total"]),
             })
 
-            # Sleep for INTERVAL in small steps so stop is responsive
             deadline = time.monotonic() + INTERVAL
             while time.monotonic() < deadline and not _stop_event.is_set():
                 await asyncio.sleep(0.1)
+
+    await _emit("status", {"running": False})

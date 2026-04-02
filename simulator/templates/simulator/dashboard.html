@@ -153,21 +153,18 @@
             }
         }
 
-        function connectSSE() {
-            const es = new EventSource('/events/');
-            es.onmessage = (e) => {
+        function connectWS() {
+            const ws = new WebSocket(`ws://${location.host}/ws/simulator/`);
+            ws.onmessage = (e) => {
                 const msg = JSON.parse(e.data);
                 if (msg.type === 'status') setRunning(msg.data.running);
                 if (msg.type === 'result') onResult(msg.data);
             };
-            es.onerror = () => {
-                es.close();
-                setTimeout(connectSSE, 2000);
-            };
+            ws.onclose = () => setTimeout(connectWS, 2000);
         }
 
         setRunning(running);
-        connectSSE();
+        connectWS();
     </script>
 </body>
 </html>

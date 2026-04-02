@@ -17,7 +17,7 @@ services:
 
   web:
     build: .
-    command: sh -c "python manage.py migrate --no-input && python manage.py collectstatic --no-input && gunicorn config.wsgi:application --bind 0.0.0.0:8000 --worker-class gthread --workers 1 --threads 50 --timeout 0 --reload"
+    command: sh -c "python manage.py migrate --no-input && python manage.py collectstatic --no-input && daphne -b 0.0.0.0 -p 8000 config.asgi:application"
     env_file:
       - .env
     volumes:
