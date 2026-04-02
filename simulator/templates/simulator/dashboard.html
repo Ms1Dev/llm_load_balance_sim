@@ -7,13 +7,17 @@
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { font-family: system-ui, sans-serif; background: #0f172a; color: #e2e8f0; min-height: 100vh; }
-        header { background: #1e293b; border-bottom: 1px solid #334155; padding: 1rem 2rem; display: flex; align-items: center; gap: 1rem; }
+
+        header {
+            background: #1e293b; border-bottom: 1px solid #334155;
+            padding: 1rem 2rem; display: flex; align-items: center; gap: 1rem;
+        }
         header h1 { font-size: 1.25rem; font-weight: 600; flex: 1; }
-        .status-dot { width: 8px; height: 8px; border-radius: 50%; background: #475569; }
-        .status-dot.running { background: #4ade80; box-shadow: 0 0 6px #4ade80; animation: pulse 1.5s infinite; }
-        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+        .status-dot { width: 8px; height: 8px; border-radius: 50%; background: #475569; flex-shrink: 0; }
+        .status-dot.running { background: #4ade80; box-shadow: 0 0 6px #4ade80; animation: blink 1.5s infinite; }
+        @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+
         #play-btn {
-            display: flex; align-items: center; gap: 0.5rem;
             padding: 0.5rem 1.25rem; border-radius: 0.5rem; border: none;
             font-size: 0.875rem; font-weight: 600; cursor: pointer;
             background: #22c55e; color: #fff; transition: background 0.15s;
@@ -22,20 +26,47 @@
         #play-btn.running { background: #f59e0b; }
         #play-btn.running:hover { background: #d97706; }
         #play-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
         main { padding: 2rem; display: grid; gap: 1.5rem; }
-        .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 1rem; }
-        .card { background: #1e293b; border: 1px solid #334155; border-radius: 0.75rem; padding: 1.25rem; }
-        .card .label { font-size: 0.75rem; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.5rem; }
-        .card .value { font-size: 2rem; font-weight: 700; color: #f1f5f9; }
-        .card .sub { font-size: 0.8rem; color: #64748b; margin-top: 0.25rem; }
-        .section-title { font-size: 0.875rem; font-weight: 600; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.75rem; }
-        table { width: 100%; border-collapse: collapse; }
-        th { text-align: left; font-size: 0.75rem; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; padding: 0.5rem 1rem; border-bottom: 1px solid #334155; }
-        td { padding: 0.65rem 1rem; border-bottom: 1px solid #1e293b; font-size: 0.875rem; font-family: monospace; }
-        tr:last-child td { border-bottom: none; }
-        .ok { color: #4ade80; }
-        .err { color: #f87171; }
-        .empty-row td { color: #475569; font-size: 0.875rem; text-align: center; font-family: system-ui; }
+
+        /* Summary stats */
+        .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1rem; }
+        .stat-card { background: #1e293b; border: 1px solid #334155; border-radius: 0.75rem; padding: 1rem 1.25rem; }
+        .stat-card .label { font-size: 0.7rem; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.4rem; }
+        .stat-card .value { font-size: 1.75rem; font-weight: 700; color: #f1f5f9; }
+
+        /* User tiles */
+        .users { display: grid; grid-template-columns: repeat(5, 1fr); gap: 1rem; }
+        @media (max-width: 1100px) { .users { grid-template-columns: repeat(4, 1fr); } }
+        @media (max-width: 800px)  { .users { grid-template-columns: repeat(3, 1fr); } }
+
+        .user-tile {
+            background: #1e293b; border: 1px solid #334155; border-radius: 0.75rem;
+            padding: 1.25rem; display: flex; flex-direction: column; gap: 0.75rem;
+        }
+        .user-tile .user-header { display: flex; align-items: center; justify-content: space-between; }
+        .user-tile .user-name { font-size: 1rem; font-weight: 700; color: #f1f5f9; }
+        .user-tile .user-rpm { font-size: 0.75rem; color: #64748b; }
+        .user-tile .user-counts { font-size: 0.75rem; color: #64748b; display: flex; gap: 0.75rem; }
+        .user-tile .user-counts span.err { color: #f87171; }
+
+        .badges { display: flex; gap: 0.5rem; min-height: 1.5rem; align-items: center; }
+        .badge {
+            font-size: 0.7rem; font-weight: 700; padding: 0.2rem 0.5rem;
+            border-radius: 0.3rem; opacity: 0; letter-spacing: 0.03em;
+        }
+        .badge.tx  { background: #1e40af; color: #93c5fd; }
+        .badge.ok  { background: #14532d; color: #4ade80; }
+        .badge.r429 { background: #713f12; color: #fde68a; }
+        .badge.err { background: #7f1d1d; color: #fca5a5; }
+
+        @keyframes flash-in {
+            0%   { opacity: 0; transform: scale(1.25); }
+            15%  { opacity: 1; transform: scale(1); }
+            70%  { opacity: 1; }
+            100% { opacity: 0; }
+        }
+        .badge.flash { animation: flash-in 0.7s ease-out forwards; }
     </style>
 </head>
 <body>
@@ -44,66 +75,80 @@
         <div class="status-dot" id="status-dot"></div>
         <button id="play-btn" onclick="toggle()">&#9654; Play</button>
     </header>
+
     <main>
         <div class="stats">
-            <div class="card">
+            <div class="stat-card">
                 <div class="label">Total Requests</div>
                 <div class="value" id="stat-total">0</div>
-                <div class="sub">since start</div>
             </div>
-            <div class="card">
+            <div class="stat-card">
                 <div class="label">Errors</div>
                 <div class="value" id="stat-errors">0</div>
-                <div class="sub">failed requests</div>
             </div>
-            <div class="card">
+            <div class="stat-card">
                 <div class="label">Avg Latency</div>
                 <div class="value" id="stat-latency">—</div>
-                <div class="sub">ms per request</div>
             </div>
-            <div class="card">
+            <div class="stat-card">
                 <div class="label">Error Rate</div>
                 <div class="value" id="stat-error-rate">—</div>
-                <div class="sub">% of requests</div>
             </div>
         </div>
 
-        <div class="card">
-            <div class="section-title">Recent Requests</div>
-            <table>
-                <thead>
-                    <tr>
-                        <th>#</th>
-                        <th>Latency</th>
-                        <th>Input tokens</th>
-                        <th>Output tokens</th>
-                        <th>Status</th>
-                    </tr>
-                </thead>
-                <tbody id="results-body">
-                    <tr class="empty-row"><td colspan="5">No requests yet — press Play to start.</td></tr>
-                </tbody>
-            </table>
-        </div>
+        <div class="users" id="users-grid"></div>
     </main>
 
     <script>
+        const USERS = [
+            { id:  1, rpm: 10 }, { id:  2, rpm: 20 }, { id:  3, rpm: 15 }, { id:  4, rpm:  8 },
+            { id:  5, rpm: 25 }, { id:  6, rpm: 12 }, { id:  7, rpm: 18 }, { id:  8, rpm:  6 },
+            { id:  9, rpm: 22 }, { id: 10, rpm: 30 }, { id: 11, rpm:  9 }, { id: 12, rpm: 16 },
+            { id: 13, rpm: 24 }, { id: 14, rpm: 11 }, { id: 15, rpm: 19 }, { id: 16, rpm:  7 },
+            { id: 17, rpm: 28 }, { id: 18, rpm: 14 }, { id: 19, rpm: 21 }, { id: 20, rpm:  5 },
+        ];
+
+        const userStats = {};
+        USERS.forEach(u => { userStats[u.id] = { total: 0, errors: 0 }; });
+
         let running = {{ running|yesno:"true,false" }};
-        const MAX_ROWS = 50;
+
+        // Build user tiles
+        const grid = document.getElementById('users-grid');
+        USERS.forEach(u => {
+            grid.insertAdjacentHTML('beforeend', `
+                <div class="user-tile" id="tile-${u.id}">
+                    <div class="user-header">
+                        <span class="user-name">U${u.id}</span>
+                        <span class="user-rpm">${u.rpm} RPM</span>
+                    </div>
+                    <div class="badges">
+                        <span class="badge tx"  id="tx-${u.id}">TX</span>
+                        <span class="badge"     id="rx-${u.id}"></span>
+                    </div>
+                    <div class="user-counts">
+                        <span id="uc-total-${u.id}">0 req</span>
+                        <span id="uc-errors-${u.id}"></span>
+                    </div>
+                </div>
+            `);
+        });
+
+        function flash(el, colorClass, text) {
+            el.textContent = text;
+            el.className = `badge ${colorClass}`;
+            // Force reflow so re-adding flash class restarts animation
+            void el.offsetWidth;
+            el.classList.add('flash');
+        }
 
         function setRunning(val) {
             running = val;
             const btn = document.getElementById('play-btn');
             const dot = document.getElementById('status-dot');
-            if (val) {
-                btn.textContent = '⏸ Pause';
-                btn.classList.add('running');
-                dot.classList.add('running');
-            } else {
-                btn.textContent = '▶ Play';
-                btn.classList.remove('running');
-                dot.classList.remove('running');
-            }
+            btn.textContent = val ? '⏸ Pause' : '▶ Play';
+            btn.classList.toggle('running', val);
+            dot.classList.toggle('running', val);
         }
 
         async function toggle() {
@@ -115,41 +160,43 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ action: running ? 'stop' : 'start' }),
                 });
-                const data = await resp.json();
-                setRunning(data.running);
+                setRunning((await resp.json()).running);
             } finally {
                 btn.disabled = false;
             }
         }
 
+        function onRequestStart(d) {
+            flash(document.getElementById(`tx-${d.user_id}`), 'tx', 'TX');
+        }
+
         function onResult(d) {
+            // Aggregate stats
             document.getElementById('stat-total').textContent = d.total;
             document.getElementById('stat-errors').textContent = d.errors;
-            document.getElementById('stat-latency').textContent = d.avg_latency_ms;
-            const rate = d.total > 0 ? ((d.errors / d.total) * 100).toFixed(1) : '—';
-            document.getElementById('stat-error-rate').textContent = rate === '—' ? '—' : rate + '%';
+            document.getElementById('stat-latency').textContent = d.avg_latency_ms + ' ms';
+            const rate = d.total > 0 ? ((d.errors / d.total) * 100).toFixed(1) + '%' : '—';
+            document.getElementById('stat-error-rate').textContent = rate;
 
-            const tbody = document.getElementById('results-body');
-            // Remove empty-state row
-            const empty = tbody.querySelector('.empty-row');
-            if (empty) empty.remove();
+            // Per-user counts
+            const us = userStats[d.user_id];
+            us.total++;
+            if (!d.success) us.errors++;
+            document.getElementById(`uc-total-${d.user_id}`).textContent = `${us.total} req`;
+            const errEl = document.getElementById(`uc-errors-${d.user_id}`);
+            if (us.errors > 0) {
+                errEl.textContent = `${us.errors} err`;
+                errEl.className = 'err';
+            }
 
-            const tr = document.createElement('tr');
-            const statusCell = d.success
-                ? `<td class="ok">OK</td>`
-                : `<td class="err">${d.error || 'error'}</td>`;
-            tr.innerHTML = `
-                <td>${d.total}</td>
-                <td>${d.latency_ms} ms</td>
-                <td>${d.input_tokens || '—'}</td>
-                <td>${d.output_tokens || '—'}</td>
-                ${statusCell}
-            `;
-            tbody.insertBefore(tr, tbody.firstChild);
-
-            // Trim old rows
-            while (tbody.rows.length > MAX_ROWS) {
-                tbody.deleteRow(tbody.rows.length - 1);
+            // RX badge
+            const rx = document.getElementById(`rx-${d.user_id}`);
+            if (d.success) {
+                flash(rx, 'ok', d.status_code || '200');
+            } else if (d.error && d.error.startsWith('429')) {
+                flash(rx, 'r429', d.status_code || '429');
+            } else {
+                flash(rx, 'err', d.status_code || 'ERR');
             }
         }
 
@@ -157,8 +204,9 @@
             const ws = new WebSocket(`ws://${location.host}/ws/simulator/`);
             ws.onmessage = (e) => {
                 const msg = JSON.parse(e.data);
-                if (msg.type === 'status') setRunning(msg.data.running);
-                if (msg.type === 'result') onResult(msg.data);
+                if (msg.type === 'status')        setRunning(msg.data.running);
+                if (msg.type === 'request_start') onRequestStart(msg.data);
+                if (msg.type === 'result')        onResult(msg.data);
             };
             ws.onclose = () => setTimeout(connectWS, 2000);
         }
