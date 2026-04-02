@@ -1,0 +1,101 @@
+services:
+  db:
+    image: postgres:16-alpine
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    environment:
+      POSTGRES_DB: demo
+      POSTGRES_USER: demo
+      POSTGRES_PASSWORD: demo
+      POSTGRES_HOST: db
+      POSTGRES_PORT: 5432
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U demo"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  web:
+    build: .
+    command: sh -c "python manage.py migrate --no-input && python manage.py collectstatic --no-input && gunicorn config.wsgi:application --bind 0.0.0.0:8000 --worker-class gthread --workers 1 --threads 50 --timeout 0 --reload"
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+    ports:
+      - "8000:8000"
+    environment:
+      DEBUG: "true"
+      DATABASE_NAME: demo
+      DATABASE_USER: demo
+      DATABASE_PASSWORD: demo
+      DATABASE_HOST: db
+      DATABASE_PORT: 5432
+      SECRET_KEY: ${SECRET_KEY:?SECRET_KEY is required}
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
+  bifrost:
+    image: maximhq/bifrost:v1.4.7
+    env_file:
+      - ./.env
+    container_name: bifrost
+    ports:
+      - "8080:8080"
+    volumes:
+      - bifrost-data:/app/data
+      - ./bifrost/config.json:/app/data/config.json:ro
+    environment:
+      - BIFROST_LOG_LEVEL=info
+      - POSTGRES_HOST=db
+      - POSTGRES_DB=demo
+      - POSTGRES_USER=demo
+      - POSTGRES_PASSWORD=demo
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      limiter:
+        condition: service_started
+
+  llm-mock:
+    build: https://github.com/piyook/llm-mock.git
+    ports:
+      - "8001:8001"
+    environment:
+      SERVER_PORT: 8001
+      MOCK_LLM_RESPONSE_TYPE: lorem
+      MAX_LOREM_PARAS: 50
+      LLM_URL_ENDPOINT: v1/chat/completions
+      LLM_NAME: openai
+      VALIDATE_REQUESTS: "OFF"
+      LOG_REQUESTS: "ON"
+      RESPONSE_DELAY_MIN: 20
+      RESPONSE_DELAY_MAX: 100
+      STREAM: "true"
+
+  limiter:
+    build: ./limiter
+    ports:
+      - "8002:8002"
+    environment:
+      UPSTREAM_URL: http://llm-mock:8001
+      REDIS_URL: redis://redis:6379
+      RATE_LIMIT_RPM: "30"
+      RATE_LIMIT_TPM: "10000"
+    depends_on:
+      - llm-mock
+      - redis
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+volumes:
+  postgres_data:
+  bifrost-data:

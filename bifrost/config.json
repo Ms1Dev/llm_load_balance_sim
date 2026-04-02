@@ -1,0 +1,52 @@
+{
+    "$schema": "https://www.getbifrost.ai/schema",
+    "client": {
+        "enable_logging": true,
+        "disable_content_logging": false,
+        "drop_excess_requests": false,
+        "initial_pool_size": 300,
+        "allow_direct_keys": false
+    },
+    "providers": {
+        "openai": {
+            "network_config": {
+                "base_url": "http://limiter:8002"
+            },
+            "keys": [
+                {
+                    "name": "openai-key-1",
+                    "value": "mocked-openai-key-1",
+                    "models": [
+                        "gpt-4o-mini",
+                        "gpt-4o"
+                    ],
+                    "weight": 1.0
+                }
+            ]
+        }
+    },
+    "logs_store": {
+        "enabled": true,
+        "type": "postgres",
+        "config": {
+            "host": "env.POSTGRES_HOST",
+            "port": 5432,
+            "user": "env.POSTGRES_USER",
+            "password": "env.POSTGRES_PASSWORD",
+            "db_name": "env.POSTGRES_DB",
+            "ssl_mode": "disable"
+        }
+    },
+    "config_store": {
+        "enabled": true,
+        "type": "postgres",
+        "config": {
+            "host": "env.POSTGRES_HOST",
+            "port": "5432",
+            "user": "env.POSTGRES_USER",
+            "password": "env.POSTGRES_PASSWORD",
+            "db_name": "env.POSTGRES_DB",
+            "ssl_mode": "disable"
+        }
+    }
+}
