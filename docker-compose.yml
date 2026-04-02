@@ -74,8 +74,8 @@ services:
       LLM_NAME: openai
       VALIDATE_REQUESTS: "OFF"
       LOG_REQUESTS: "ON"
-      RESPONSE_DELAY_MIN: 20
-      RESPONSE_DELAY_MAX: 100
+      RESPONSE_DELAY_MIN: 0
+      RESPONSE_DELAY_MAX: 0
       STREAM: "true"
 
   limiter:

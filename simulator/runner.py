@@ -10,6 +10,8 @@ import aiohttp
 BASE_URL = os.environ.get("OPENAI_BASE_URL", "http://bifrost:8080/v1")
 API_KEY = os.environ.get("OPENAI_API_KEY", "mocked-openai-key-1")
 MODEL = os.environ.get("OPENAI_MODEL", "openai/gpt-4o-mini")
+REDIS_URL = os.environ.get("REDIS_URL", "redis://redis:6379")
+DEFAULT_TIME_SCALE = 4
 
 USERS = [
     {"id":  1, "rpm": 10, "prompt_words": 10},
@@ -101,8 +103,10 @@ async def _emit(event_type: str, data: dict):
     })
 
 
-async def _user_loop(session: aiohttp.ClientSession, user: dict):
-    interval = 60.0 / user["rpm"]
+async def _user_loop(session: aiohttp.ClientSession, user: dict, redis_client):
+    val = await redis_client.get('config:time_scale')
+    time_scale = float(val) if val else DEFAULT_TIME_SCALE
+    interval = 60.0 / user["rpm"] / time_scale
     # Stagger start as if each user already sent one request at a random point in their cycle
     await asyncio.sleep(random.uniform(0, interval))
     while not _stop_event.is_set():
@@ -178,17 +182,23 @@ async def _user_loop(session: aiohttp.ClientSession, user: dict):
             "avg_latency_ms": round(snapshot["total_latency_ms"] / snapshot["total"]),
         })
 
+        val = await redis_client.get('config:time_scale')
+        time_scale = float(val) if val else DEFAULT_TIME_SCALE
+        interval = 60.0 / user["rpm"] / time_scale
         deadline = time.monotonic() + interval
         while time.monotonic() < deadline and not _stop_event.is_set():
             await asyncio.sleep(0.1)
 
 
 async def _run_loop():
+    import redis.asyncio as aioredis
+    redis_client = aioredis.from_url(REDIS_URL)
     await _emit("status", {"running": True})
-
-    async with aiohttp.ClientSession() as session:
-        await asyncio.gather(*[
-            _user_loop(session, user) for user in USERS
-        ])
-
+    try:
+        async with aiohttp.ClientSession() as session:
+            await asyncio.gather(*[
+                _user_loop(session, user, redis_client) for user in USERS
+            ])
+    finally:
+        await redis_client.aclose()
     await _emit("status", {"running": False})

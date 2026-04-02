@@ -17,9 +17,21 @@ TPM_LIMIT = int(os.environ.get("RATE_LIMIT_TPM", "10000"))
 # If a request doesn't specify max_tokens, assume this many output tokens when reserving
 DEFAULT_MAX_TOKENS = 500
 
-# Compress the rate limit window by 4x so a 30s test spans two full window cycles
-TIME_SCALE = 4
-WINDOW_SECONDS = 60.0 / TIME_SCALE
+# Compress the rate limit window — value is read from Redis (set by the Django config model)
+DEFAULT_TIME_SCALE = 4
+_time_scale_cache: float = DEFAULT_TIME_SCALE
+_time_scale_updated_at: float = 0.0
+_TIME_SCALE_TTL = 5.0  # re-read from Redis at most every 5 seconds
+
+
+async def get_time_scale(redis_client) -> float:
+    global _time_scale_cache, _time_scale_updated_at
+    now = time.time()
+    if now - _time_scale_updated_at > _TIME_SCALE_TTL:
+        val = await redis_client.get('config:time_scale')
+        _time_scale_cache = float(val) if val else DEFAULT_TIME_SCALE
+        _time_scale_updated_at = now
+    return _time_scale_cache
 
 
 import tiktoken
@@ -41,14 +53,14 @@ def count_input_tokens(model: str, messages: list) -> int:
 
 
 async def sliding_window_check(
-    redis_client: aioredis.Redis, key: str, limit: int, cost: int
+    redis_client: aioredis.Redis, key: str, limit: int, cost: int, window_seconds: float
 ) -> tuple[bool, int, int, list]:
     """
-    Check a sliding 60-second window without consuming capacity.
+    Check a sliding window without consuming capacity.
     Returns (allowed, remaining, retry_after_seconds, entries).
     """
     now = time.time()
-    window_start = now - WINDOW_SECONDS
+    window_start = now - window_seconds
 
     async with redis_client.pipeline(transaction=False) as pipe:
         pipe.zremrangebyscore(key, 0, window_start)
@@ -61,11 +73,11 @@ async def sliding_window_check(
 
     if current + cost > limit:
         freed = 0
-        retry_after = 60
+        retry_after = window_seconds
         for member, score in entries:
             freed += int(member.split(":")[1])
             if current - freed + cost <= limit:
-                retry_after = max(1, int(60 - (now - score)) + 1)
+                retry_after = max(1, int(window_seconds - (now - score)) + 1)
                 break
         return False, max(0, remaining), retry_after, entries
 
@@ -104,9 +116,11 @@ async def chat_completions(request: Request):
     tokens_to_reserve = input_tokens + max_tokens
 
     redis_client: aioredis.Redis = request.app.state.redis
+    time_scale = await get_time_scale(redis_client)
+    window_seconds = 60.0 / time_scale
 
     rpm_ok, rpm_remaining, rpm_retry, _ = await sliding_window_check(
-        redis_client, "rpm:sliding", RPM_LIMIT, cost=1
+        redis_client, "rpm:sliding", RPM_LIMIT, cost=1, window_seconds=window_seconds
     )
     if not rpm_ok:
         return JSONResponse(
@@ -124,7 +138,7 @@ async def chat_completions(request: Request):
         )
 
     tpm_ok, tpm_remaining, tpm_retry, _ = await sliding_window_check(
-        redis_client, "tpm:sliding", TPM_LIMIT, cost=tokens_to_reserve
+        redis_client, "tpm:sliding", TPM_LIMIT, cost=tokens_to_reserve, window_seconds=window_seconds
     )
     if not tpm_ok:
         return JSONResponse(
