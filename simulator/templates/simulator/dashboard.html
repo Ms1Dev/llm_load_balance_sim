@@ -84,9 +84,17 @@
     <header>
         <h1>LLM Load Balancer Simulator</h1>
         <div class="scale-control">
-            <label for="time-scale">Time scale</label>
+            <label for="rpm-limit">RPM</label>
+            <input type="number" id="rpm-limit" min="1" value="{{ rpm_limit }}">
+        </div>
+        <div class="scale-control">
+            <label for="tpm-limit">TPM</label>
+            <input type="number" id="tpm-limit" min="1" value="{{ tpm_limit }}">
+        </div>
+        <div class="scale-control">
+            <label for="time-scale">Scale</label>
             <input type="number" id="time-scale" min="1" max="100" value="{{ time_scale }}">
-            <button onclick="saveScale()">Apply</button>
+            <button onclick="saveConfig()">Apply</button>
         </div>
         <div class="status-dot" id="status-dot"></div>
         <button id="play-btn" onclick="toggle()">&#9654; Play</button>
@@ -167,13 +175,15 @@
             dot.classList.toggle('running', val);
         }
 
-        async function saveScale() {
-            const val = parseInt(document.getElementById('time-scale').value, 10);
-            if (!val || val < 1) return;
+        async function saveConfig() {
+            const time_scale = parseInt(document.getElementById('time-scale').value, 10);
+            const rpm_limit  = parseInt(document.getElementById('rpm-limit').value, 10);
+            const tpm_limit  = parseInt(document.getElementById('tpm-limit').value, 10);
+            if (!time_scale || !rpm_limit || !tpm_limit) return;
             await fetch('/config/', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ time_scale: val }),
+                body: JSON.stringify({ time_scale, rpm_limit, tpm_limit }),
             });
         }
 

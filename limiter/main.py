@@ -11,27 +11,31 @@ from fastapi.responses import JSONResponse, StreamingResponse
 
 UPSTREAM_URL = os.environ.get("UPSTREAM_URL", "http://llm-mock:8001")
 REDIS_URL = os.environ.get("REDIS_URL", "redis://redis:6379")
-RPM_LIMIT = int(os.environ.get("RATE_LIMIT_RPM", "30"))
-TPM_LIMIT = int(os.environ.get("RATE_LIMIT_TPM", "10000"))
+DEFAULT_RPM_LIMIT = int(os.environ.get("RATE_LIMIT_RPM", "30"))
+DEFAULT_TPM_LIMIT = int(os.environ.get("RATE_LIMIT_TPM", "10000"))
 
 # If a request doesn't specify max_tokens, assume this many output tokens when reserving
 DEFAULT_MAX_TOKENS = 500
 
-# Compress the rate limit window — value is read from Redis (set by the Django config model)
+# Config is read from Redis (written by the Django Config model) with a short TTL cache
 DEFAULT_TIME_SCALE = 4
-_time_scale_cache: float = DEFAULT_TIME_SCALE
-_time_scale_updated_at: float = 0.0
-_TIME_SCALE_TTL = 5.0  # re-read from Redis at most every 5 seconds
+_config_cache: dict = {}
+_config_updated_at: float = 0.0
+_CONFIG_TTL = 5.0
 
 
-async def get_time_scale(redis_client) -> float:
-    global _time_scale_cache, _time_scale_updated_at
+async def get_config(redis_client) -> dict:
+    global _config_cache, _config_updated_at
     now = time.time()
-    if now - _time_scale_updated_at > _TIME_SCALE_TTL:
-        val = await redis_client.get('config:time_scale')
-        _time_scale_cache = float(val) if val else DEFAULT_TIME_SCALE
-        _time_scale_updated_at = now
-    return _time_scale_cache
+    if now - _config_updated_at > _CONFIG_TTL:
+        vals = await redis_client.mget('config:time_scale', 'config:rpm_limit', 'config:tpm_limit')
+        _config_cache = {
+            'time_scale': float(vals[0]) if vals[0] else DEFAULT_TIME_SCALE,
+            'rpm_limit':  int(vals[1])   if vals[1] else DEFAULT_RPM_LIMIT,
+            'tpm_limit':  int(vals[2])   if vals[2] else DEFAULT_TPM_LIMIT,
+        }
+        _config_updated_at = now
+    return _config_cache
 
 
 import tiktoken
@@ -116,41 +120,43 @@ async def chat_completions(request: Request):
     tokens_to_reserve = input_tokens + max_tokens
 
     redis_client: aioredis.Redis = request.app.state.redis
-    time_scale = await get_time_scale(redis_client)
-    window_seconds = 60.0 / time_scale
+    cfg = await get_config(redis_client)
+    window_seconds = 60.0 / cfg['time_scale']
+    rpm_limit = cfg['rpm_limit']
+    tpm_limit = cfg['tpm_limit']
 
     rpm_ok, rpm_remaining, rpm_retry, _ = await sliding_window_check(
-        redis_client, "rpm:sliding", RPM_LIMIT, cost=1, window_seconds=window_seconds
+        redis_client, "rpm:sliding", rpm_limit, cost=1, window_seconds=window_seconds
     )
     if not rpm_ok:
         return JSONResponse(
             status_code=429,
             content={"error": {
-                "message": f"Rate limit exceeded: {RPM_LIMIT} RPM.",
+                "message": f"Rate limit exceeded: {rpm_limit} RPM.",
                 "type": "requests",
                 "code": "rate_limit_exceeded",
             }},
             headers={
                 "Retry-After": str(rpm_retry),
-                "x-ratelimit-limit-requests": str(RPM_LIMIT),
+                "x-ratelimit-limit-requests": str(rpm_limit),
                 "x-ratelimit-remaining-requests": "0",
             },
         )
 
     tpm_ok, tpm_remaining, tpm_retry, _ = await sliding_window_check(
-        redis_client, "tpm:sliding", TPM_LIMIT, cost=tokens_to_reserve, window_seconds=window_seconds
+        redis_client, "tpm:sliding", tpm_limit, cost=tokens_to_reserve, window_seconds=window_seconds
     )
     if not tpm_ok:
         return JSONResponse(
             status_code=429,
             content={"error": {
-                "message": f"Rate limit exceeded: {TPM_LIMIT} TPM.",
+                "message": f"Rate limit exceeded: {tpm_limit} TPM.",
                 "type": "tokens",
                 "code": "rate_limit_exceeded",
             }},
             headers={
                 "Retry-After": str(tpm_retry),
-                "x-ratelimit-limit-tokens": str(TPM_LIMIT),
+                "x-ratelimit-limit-tokens": str(tpm_limit),
                 "x-ratelimit-remaining-tokens": "0",
             },
         )
@@ -159,9 +165,9 @@ async def chat_completions(request: Request):
     await sliding_window_consume(redis_client, "tpm:sliding", cost=tokens_to_reserve)
 
     rl_headers = {
-        "x-ratelimit-limit-requests": str(RPM_LIMIT),
+        "x-ratelimit-limit-requests": str(rpm_limit),
         "x-ratelimit-remaining-requests": str(rpm_remaining),
-        "x-ratelimit-limit-tokens": str(TPM_LIMIT),
+        "x-ratelimit-limit-tokens": str(tpm_limit),
         "x-ratelimit-remaining-tokens": str(tpm_remaining),
     }
 

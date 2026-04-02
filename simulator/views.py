@@ -14,6 +14,8 @@ def dashboard(request):
     return render(request, 'simulator/dashboard.html', {
         "running": runner.is_running(),
         "time_scale": config.time_scale,
+        "rpm_limit": config.rpm_limit,
+        "tpm_limit": config.tpm_limit,
     })
 
 
@@ -22,9 +24,18 @@ def dashboard(request):
 def update_config(request):
     data = json.loads(request.body)
     config = Config.get()
-    config.time_scale = max(1, int(data.get('time_scale', config.time_scale)))
+    if 'time_scale' in data:
+        config.time_scale = max(1, int(data['time_scale']))
+    if 'rpm_limit' in data:
+        config.rpm_limit = max(1, int(data['rpm_limit']))
+    if 'tpm_limit' in data:
+        config.tpm_limit = max(1, int(data['tpm_limit']))
     config.save()
-    return JsonResponse({'time_scale': config.time_scale})
+    return JsonResponse({
+        'time_scale': config.time_scale,
+        'rpm_limit': config.rpm_limit,
+        'tpm_limit': config.tpm_limit,
+    })
 
 
 @csrf_exempt
