@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LLM Load Balancer Simulator</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: system-ui, sans-serif; background: #0f172a; color: #e2e8f0; min-height: 100vh; }
+        header { background: #1e293b; border-bottom: 1px solid #334155; padding: 1rem 2rem; display: flex; align-items: center; gap: 1rem; }
+        header h1 { font-size: 1.25rem; font-weight: 600; }
+        header span { font-size: 0.75rem; background: #334155; color: #94a3b8; padding: 0.2rem 0.6rem; border-radius: 9999px; }
+        main { padding: 2rem; display: grid; gap: 1.5rem; }
+        .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem; }
+        .card { background: #1e293b; border: 1px solid #334155; border-radius: 0.75rem; padding: 1.25rem; }
+        .card .label { font-size: 0.75rem; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.5rem; }
+        .card .value { font-size: 2rem; font-weight: 700; color: #f1f5f9; }
+        .card .sub { font-size: 0.8rem; color: #64748b; margin-top: 0.25rem; }
+        .card.green .value { color: #4ade80; }
+        .card.yellow .value { color: #facc15; }
+        .card.red .value { color: #f87171; }
+        .section-title { font-size: 0.875rem; font-weight: 600; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.75rem; }
+        table { width: 100%; border-collapse: collapse; }
+        th { text-align: left; font-size: 0.75rem; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; padding: 0.5rem 1rem; border-bottom: 1px solid #334155; }
+        td { padding: 0.75rem 1rem; border-bottom: 1px solid #1e293b; font-size: 0.875rem; }
+        tr:last-child td { border-bottom: none; }
+        .badge { display: inline-block; padding: 0.15rem 0.5rem; border-radius: 9999px; font-size: 0.7rem; font-weight: 600; }
+        .badge.healthy { background: #14532d; color: #4ade80; }
+        .badge.degraded { background: #713f12; color: #facc15; }
+        .badge.down { background: #7f1d1d; color: #f87171; }
+        .empty { color: #475569; font-size: 0.875rem; padding: 2rem; text-align: center; }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>LLM Load Balancer Simulator</h1>
+        <span>Dashboard</span>
+    </header>
+    <main>
+        <div class="stats">
+            <div class="card green">
+                <div class="label">Total Requests</div>
+                <div class="value">0</div>
+                <div class="sub">since start</div>
+            </div>
+            <div class="card">
+                <div class="label">Active Models</div>
+                <div class="value">0</div>
+                <div class="sub">registered endpoints</div>
+            </div>
+            <div class="card yellow">
+                <div class="label">Avg Latency</div>
+                <div class="value">—</div>
+                <div class="sub">ms per request</div>
+            </div>
+            <div class="card">
+                <div class="label">Error Rate</div>
+                <div class="value">—</div>
+                <div class="sub">% of requests</div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="section-title">Model Endpoints</div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Provider</th>
+                        <th>Status</th>
+                        <th>Requests</th>
+                        <th>Avg Latency</th>
+                        <th>Errors</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td colspan="6" class="empty">No model endpoints configured yet.</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="card">
+            <div class="section-title">Recent Requests</div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Time</th>
+                        <th>Model</th>
+                        <th>Tokens</th>
+                        <th>Latency</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td colspan="5" class="empty">No requests recorded yet.</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </main>
+</body>
+</html>

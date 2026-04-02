@@ -197,3 +197,8 @@ async def chat_completions(request: Request):
 @app.get("/health")
 async def health():
     return {"status": "ok"}
+
+
+@app.get("/v1/models")
+async def models():
+    return {"data": [{"id": "gpt-4o-mini"}, {"id": "gpt-4o"}]}
