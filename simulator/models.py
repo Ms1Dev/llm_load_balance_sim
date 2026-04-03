@@ -7,10 +7,6 @@ REDIS_URL = os.environ.get('REDIS_URL', 'redis://redis:6379')
 
 
 class Config(models.Model):
-    time_scale = models.PositiveIntegerField(
-        default=4,
-        help_text="Compresses the rate-limit window. 4 = 60s window behaves like 15s.",
-    )
     rpm_limit = models.PositiveIntegerField(
         default=30,
         help_text="Maximum requests per minute allowed by the limiter.",
@@ -28,7 +24,6 @@ class Config(models.Model):
         super().save(*args, **kwargs)
         r = redis_sync.from_url(REDIS_URL)
         r.mset({
-            'config:time_scale': self.time_scale,
             'config:rpm_limit': self.rpm_limit,
             'config:tpm_limit': self.tpm_limit,
         })
@@ -37,8 +32,7 @@ class Config(models.Model):
     @classmethod
     def get(cls):
         obj, created = cls.objects.get_or_create(pk=1, defaults={
-            'time_scale': 4,
-            'rpm_limit': 30,
+            'rpm_limit': 120,
             'tpm_limit': 10000,
         })
         if not created:
@@ -46,7 +40,6 @@ class Config(models.Model):
             # so a restart with an existing DB row would leave Redis stale.
             r = redis_sync.from_url(REDIS_URL)
             r.mset({
-                'config:time_scale': obj.time_scale,
                 'config:rpm_limit': obj.rpm_limit,
                 'config:tpm_limit': obj.tpm_limit,
             })

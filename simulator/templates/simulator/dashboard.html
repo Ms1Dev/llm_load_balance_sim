@@ -1,84 +1,11 @@
+{% load static %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>LLM Load Balancer Simulator</title>
-    <style>
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: system-ui, sans-serif; background: #0f172a; color: #e2e8f0; min-height: 100vh; }
-
-        header {
-            background: #1e293b; border-bottom: 1px solid #334155;
-            padding: 1rem 2rem; display: flex; align-items: center; gap: 1rem;
-        }
-        header h1 { font-size: 1.25rem; font-weight: 600; flex: 1; }
-        .status-dot { width: 8px; height: 8px; border-radius: 50%; background: #475569; flex-shrink: 0; }
-        .status-dot.running { background: #4ade80; box-shadow: 0 0 6px #4ade80; animation: blink 1.5s infinite; }
-        @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
-
-        #play-btn {
-            padding: 0.5rem 1.25rem; border-radius: 0.5rem; border: none;
-            font-size: 0.875rem; font-weight: 600; cursor: pointer;
-            background: #22c55e; color: #fff; transition: background 0.15s;
-        }
-        #play-btn:hover { background: #16a34a; }
-        #play-btn.running { background: #f59e0b; }
-        #play-btn.running:hover { background: #d97706; }
-        #play-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-        .scale-control { display: flex; align-items: center; gap: 0.5rem; font-size: 0.8rem; color: #94a3b8; }
-        .scale-control label { white-space: nowrap; }
-        .scale-control input[type=number] {
-            width: 4rem; background: #0f172a; border: 1px solid #334155; border-radius: 0.375rem;
-            color: #f1f5f9; padding: 0.35rem 0.5rem; font-size: 0.8rem; text-align: center;
-        }
-        .scale-control button {
-            background: #334155; border: none; color: #e2e8f0; border-radius: 0.375rem;
-            padding: 0.35rem 0.6rem; cursor: pointer; font-size: 0.75rem;
-        }
-        .scale-control button:hover { background: #475569; }
-
-        main { padding: 2rem; display: grid; gap: 1.5rem; }
-
-        /* Summary stats */
-        .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1rem; }
-        .stat-card { background: #1e293b; border: 1px solid #334155; border-radius: 0.75rem; padding: 1rem 1.25rem; }
-        .stat-card .label { font-size: 0.7rem; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.4rem; }
-        .stat-card .value { font-size: 1.75rem; font-weight: 700; color: #f1f5f9; }
-
-        /* User tiles */
-        .users { display: grid; grid-template-columns: repeat(5, 1fr); gap: 1rem; }
-        @media (max-width: 1100px) { .users { grid-template-columns: repeat(4, 1fr); } }
-        @media (max-width: 800px)  { .users { grid-template-columns: repeat(3, 1fr); } }
-
-        .user-tile {
-            background: #1e293b; border: 1px solid #334155; border-radius: 0.75rem;
-            padding: 1.25rem; display: flex; flex-direction: column; gap: 0.75rem;
-        }
-        .user-tile .user-header { display: flex; align-items: center; justify-content: space-between; }
-        .user-tile .user-name { font-size: 1rem; font-weight: 700; color: #f1f5f9; }
-        .user-tile .user-rpm { font-size: 0.75rem; color: #64748b; }
-        .user-tile .user-counts { font-size: 0.75rem; color: #64748b; display: flex; gap: 0.75rem; }
-        .user-tile .user-counts span.err { color: #f87171; }
-
-        .badges { display: flex; gap: 0.5rem; min-height: 1.5rem; align-items: center; }
-        .badge {
-            font-size: 0.7rem; font-weight: 700; padding: 0.2rem 0.5rem;
-            border-radius: 0.3rem; opacity: 0; letter-spacing: 0.03em;
-        }
-        .badge.tx  { background: #1e40af; color: #93c5fd; }
-        .badge.ok  { background: #14532d; color: #4ade80; }
-        .badge.r429 { background: #713f12; color: #fde68a; }
-        .badge.err { background: #7f1d1d; color: #fca5a5; }
-
-        @keyframes flash-in {
-            0%   { opacity: 0; transform: scale(1.25); }
-            15%  { opacity: 1; transform: scale(1); }
-            70%  { opacity: 1; }
-            100% { opacity: 0; }
-        }
-        .badge.flash { animation: flash-in 0.7s ease-out forwards; }
-    </style>
+    <link rel="stylesheet" href="{% static 'app.css' %}">
 </head>
 <body>
     <header>
@@ -92,13 +19,18 @@
             <input type="number" id="tpm-limit" min="1" value="{{ tpm_limit }}">
         </div>
         <div class="scale-control">
-            <label for="time-scale">Scale</label>
-            <input type="number" id="time-scale" min="1" max="100" value="{{ time_scale }}">
             <button onclick="saveConfig()">Apply</button>
         </div>
         <div class="status-dot" id="status-dot"></div>
-        <button id="play-btn" onclick="toggle()">&#9654; Play</button>
+        <button id="play-btn" class="hdr-btn" onclick="toggle()">&#9654; Play</button>
     </header>
+
+    <div id="noisy-toolbar">
+        <span id="toolbar-label">Click tiles to select users</span>
+        <button id="btn-make-noisy" onclick="applyNoisy()" style="display:none">Make noisy</button>
+        <button id="btn-reset-noisy" onclick="resetNoisy()">Reset all</button>
+        <button id="btn-clear-sel" onclick="clearSelection()" style="display:none">Clear selection</button>
+    </div>
 
     <main>
         <div class="stats">
@@ -124,44 +56,144 @@
     </main>
 
     <script>
-        const USERS = [
-            { id:  1, rpm: 10 }, { id:  2, rpm: 20 }, { id:  3, rpm: 15 }, { id:  4, rpm:  8 },
-            { id:  5, rpm: 25 }, { id:  6, rpm: 12 }, { id:  7, rpm: 18 }, { id:  8, rpm:  6 },
-            { id:  9, rpm: 22 }, { id: 10, rpm: 30 }, { id: 11, rpm:  9 }, { id: 12, rpm: 16 },
-            { id: 13, rpm: 24 }, { id: 14, rpm: 11 }, { id: 15, rpm: 19 }, { id: 16, rpm:  7 },
-            { id: 17, rpm: 28 }, { id: 18, rpm: 14 }, { id: 19, rpm: 21 }, { id: 20, rpm:  5 },
-        ];
+        const USER_IDS = Array.from({length: 20}, (_, i) => i + 1);
+        const BASELINE_RPM = 10;
+        const NOISY_RPM = 40;
 
-        const userStats = {};
-        USERS.forEach(u => { userStats[u.id] = { total: 0, errors: 0 }; });
+        // Per-user sliding window: stores {ts, latency_ms, is429} entries
+        const userWindow = {};
+        USER_IDS.forEach(id => { userWindow[id] = []; });
+
+        function windowMs() {
+            return 60 * 1000; // one simulated minute in real milliseconds
+        }
+
+        function pruneWindow(id) {
+            const cutoff = Date.now() - windowMs();
+            userWindow[id] = userWindow[id].filter(r => r.ts >= cutoff);
+        }
+
+        function renderUserMetrics(id) {
+            pruneWindow(id);
+            const entries = userWindow[id];
+            const latEl     = document.getElementById(`lat-${id}`);
+            const r429rpmEl = document.getElementById(`r429rpm-${id}`);
+            const r429tpmEl = document.getElementById(`r429tpm-${id}`);
+            if (entries.length === 0) {
+                latEl.textContent = r429rpmEl.textContent = r429tpmEl.textContent = '—';
+                latEl.className = r429rpmEl.className = r429tpmEl.className = 'metric-value';
+                return;
+            }
+            const avgLat  = Math.round(entries.reduce((s, r) => s + r.latency_ms, 0) / entries.length);
+            const pctRpm  = Math.round(entries.filter(r => r.is429rpm).length / entries.length * 100);
+            const pctTpm  = Math.round(entries.filter(r => r.is429tpm).length / entries.length * 100);
+
+            latEl.textContent = avgLat + ' ms';
+            latEl.className   = 'metric-value';
+
+            r429rpmEl.textContent = pctRpm + '%';
+            r429rpmEl.className   = 'metric-value' + (pctRpm >= 30 ? ' high-429' : pctRpm > 0 ? ' mid-429' : '');
+
+            r429tpmEl.textContent = pctTpm + '%';
+            r429tpmEl.className   = 'metric-value' + (pctTpm >= 30 ? ' high-429' : pctTpm > 0 ? ' mid-429' : '');
+        }
+
+        // Decay display as old entries leave the window
+        setInterval(() => { USER_IDS.forEach(renderUserMetrics); }, 1000);
 
         let running = {{ running|yesno:"true,false" }};
+        let noisyIds = new Set({{ noisy_user_ids|default:"[]" }});
+        let selectedIds = new Set();
 
-        // Build user tiles
+        // Build tiles
         const grid = document.getElementById('users-grid');
-        USERS.forEach(u => {
-            grid.insertAdjacentHTML('beforeend', `
-                <div class="user-tile" id="tile-${u.id}">
-                    <div class="user-header">
-                        <span class="user-name">U${u.id}</span>
-                        <span class="user-rpm">${u.rpm} RPM</span>
+        USER_IDS.forEach(id => {
+            const div = document.createElement('div');
+            div.className = 'user-tile' + (noisyIds.has(id) ? ' noisy' : '');
+            div.id = `tile-${id}`;
+            div.onclick = () => toggleSelect(id);
+            div.innerHTML = `
+                <div class="user-header">
+                    <span class="user-name">U${id}</span>
+                    <span class="noisy-label">NOISY</span>
+                    <span class="user-rpm" id="rpm-label-${id}">${noisyIds.has(id) ? NOISY_RPM : BASELINE_RPM} RPM</span>
+                </div>
+                <div class="badges">
+                    <span class="badge tx" id="tx-${id}">TX</span>
+                    <span class="badge"   id="rx-${id}"></span>
+                </div>
+                <div class="user-metrics">
+                    <div class="metric">
+                        <span class="metric-label">Avg latency</span>
+                        <span class="metric-value" id="lat-${id}">—</span>
                     </div>
-                    <div class="badges">
-                        <span class="badge tx"  id="tx-${u.id}">TX</span>
-                        <span class="badge"     id="rx-${u.id}"></span>
+                    <div class="metric">
+                        <span class="metric-label">429 RPM</span>
+                        <span class="metric-value" id="r429rpm-${id}">—</span>
                     </div>
-                    <div class="user-counts">
-                        <span id="uc-total-${u.id}">0 req</span>
-                        <span id="uc-errors-${u.id}"></span>
+                    <div class="metric">
+                        <span class="metric-label">429 TPM</span>
+                        <span class="metric-value" id="r429tpm-${id}">—</span>
                     </div>
                 </div>
-            `);
+            `;
+            grid.appendChild(div);
         });
+
+        function toggleSelect(id) {
+            if (selectedIds.has(id)) selectedIds.delete(id);
+            else selectedIds.add(id);
+            document.getElementById(`tile-${id}`).classList.toggle('selected', selectedIds.has(id));
+            updateToolbar();
+        }
+
+        function clearSelection() {
+            selectedIds.forEach(id => document.getElementById(`tile-${id}`).classList.remove('selected'));
+            selectedIds.clear();
+            updateToolbar();
+        }
+
+        function updateToolbar() {
+            const n = selectedIds.size;
+            document.getElementById('toolbar-label').textContent =
+                n > 0 ? `${n} user${n > 1 ? 's' : ''} selected` : 'Click tiles to select users';
+            document.getElementById('btn-make-noisy').style.display = n > 0 ? '' : 'none';
+            document.getElementById('btn-clear-sel').style.display  = n > 0 ? '' : 'none';
+        }
+
+        function applyNoisyIds(ids) {
+            noisyIds = new Set(ids);
+            USER_IDS.forEach(id => {
+                const tile = document.getElementById(`tile-${id}`);
+                const isNoisy = noisyIds.has(id);
+                tile.classList.toggle('noisy', isNoisy);
+                document.getElementById(`rpm-label-${id}`).textContent =
+                    (isNoisy ? NOISY_RPM : BASELINE_RPM) + ' RPM';
+            });
+        }
+
+        async function applyNoisy() {
+            const ids = [...selectedIds, ...noisyIds]; // add to existing noisy set
+            const unique = [...new Set(ids)];
+            await fetch('/noisy/', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ user_ids: unique }),
+            });
+            clearSelection();
+        }
+
+        async function resetNoisy() {
+            await fetch('/noisy/', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ user_ids: [] }),
+            });
+        }
 
         function flash(el, colorClass, text) {
             el.textContent = text;
             el.className = `badge ${colorClass}`;
-            // Force reflow so re-adding flash class restarts animation
             void el.offsetWidth;
             el.classList.add('flash');
         }
@@ -176,14 +208,13 @@
         }
 
         async function saveConfig() {
-            const time_scale = parseInt(document.getElementById('time-scale').value, 10);
             const rpm_limit  = parseInt(document.getElementById('rpm-limit').value, 10);
             const tpm_limit  = parseInt(document.getElementById('tpm-limit').value, 10);
-            if (!time_scale || !rpm_limit || !tpm_limit) return;
+            if (!rpm_limit || !tpm_limit) return;
             await fetch('/config/', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ time_scale, rpm_limit, tpm_limit }),
+                body: JSON.stringify({ rpm_limit, tpm_limit }),
             });
         }
 
@@ -202,38 +233,26 @@
             }
         }
 
-        function onRequestStart(d) {
-            flash(document.getElementById(`tx-${d.user_id}`), 'tx', 'TX');
-        }
-
         function onResult(d) {
-            // Aggregate stats
+            // Global stats
             document.getElementById('stat-total').textContent = d.total;
             document.getElementById('stat-errors').textContent = d.errors;
             document.getElementById('stat-latency').textContent = d.avg_latency_ms + ' ms';
             const rate = d.total > 0 ? ((d.errors / d.total) * 100).toFixed(1) + '%' : '—';
             document.getElementById('stat-error-rate').textContent = rate;
 
-            // Per-user counts
-            const us = userStats[d.user_id];
-            us.total++;
-            if (!d.success) us.errors++;
-            document.getElementById(`uc-total-${d.user_id}`).textContent = `${us.total} req`;
-            const errEl = document.getElementById(`uc-errors-${d.user_id}`);
-            if (us.errors > 0) {
-                errEl.textContent = `${us.errors} err`;
-                errEl.className = 'err';
-            }
+            // Feed sliding window
+            const is429rpm = !d.success && d.error === '429';
+            const is429tpm = !d.success && d.error === '429:tokens';
+            userWindow[d.user_id].push({ ts: Date.now(), latency_ms: d.latency_ms, is429rpm, is429tpm });
+            renderUserMetrics(d.user_id);
 
             // RX badge
             const rx = document.getElementById(`rx-${d.user_id}`);
-            if (d.success) {
-                flash(rx, 'ok', d.status_code || '200');
-            } else if (d.error && d.error.startsWith('429')) {
-                flash(rx, 'r429', d.status_code || '429');
-            } else {
-                flash(rx, 'err', d.status_code || 'ERR');
-            }
+            if (d.success)      flash(rx, 'ok',   d.status_code || '200');
+            else if (is429rpm)  flash(rx, 'r429', 'RPM');
+            else if (is429tpm)  flash(rx, 'r429', 'TPM');
+            else                flash(rx, 'err',  d.status_code || 'ERR');
         }
 
         function connectWS() {
@@ -241,8 +260,9 @@
             ws.onmessage = (e) => {
                 const msg = JSON.parse(e.data);
                 if (msg.type === 'status')        setRunning(msg.data.running);
-                if (msg.type === 'request_start') onRequestStart(msg.data);
+                if (msg.type === 'request_start') flash(document.getElementById(`tx-${msg.data.user_id}`), 'tx', 'TX');
                 if (msg.type === 'result')        onResult(msg.data);
+                if (msg.type === 'noisy_users')   applyNoisyIds(msg.data.noisy_user_ids);
             };
             ws.onclose = () => setTimeout(connectWS, 2000);
         }

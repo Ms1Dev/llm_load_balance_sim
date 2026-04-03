@@ -11,30 +11,14 @@ BASE_URL = os.environ.get("OPENAI_BASE_URL", "http://bifrost:8080/v1")
 API_KEY = os.environ.get("OPENAI_API_KEY", "mocked-openai-key-1")
 MODEL = os.environ.get("OPENAI_MODEL", "openai/gpt-4o-mini")
 REDIS_URL = os.environ.get("REDIS_URL", "redis://redis:6379")
-DEFAULT_TIME_SCALE = 4
 
-USERS = [
-    {"id":  1, "rpm": 10, "prompt_words": 10},
-    {"id":  2, "rpm": 20, "prompt_words": 20},
-    {"id":  3, "rpm": 15, "prompt_words": 15},
-    {"id":  4, "rpm":  8, "prompt_words": 30},
-    {"id":  5, "rpm": 25, "prompt_words":  5},
-    {"id":  6, "rpm": 12, "prompt_words": 18},
-    {"id":  7, "rpm": 18, "prompt_words": 12},
-    {"id":  8, "rpm":  6, "prompt_words": 25},
-    {"id":  9, "rpm": 22, "prompt_words":  8},
-    {"id": 10, "rpm": 30, "prompt_words": 10},
-    {"id": 11, "rpm":  9, "prompt_words": 20},
-    {"id": 12, "rpm": 16, "prompt_words": 15},
-    {"id": 13, "rpm": 24, "prompt_words":  6},
-    {"id": 14, "rpm": 11, "prompt_words": 28},
-    {"id": 15, "rpm": 19, "prompt_words": 12},
-    {"id": 16, "rpm":  7, "prompt_words": 22},
-    {"id": 17, "rpm": 28, "prompt_words":  8},
-    {"id": 18, "rpm": 14, "prompt_words": 16},
-    {"id": 19, "rpm": 21, "prompt_words": 10},
-    {"id": 20, "rpm":  5, "prompt_words": 35},
-]
+USER_IDS = list(range(1, 21))
+
+BASELINE_RPM = (5,20)
+BASELINE_PROMPT_WORDS = (15,60)
+
+NOISY_RPM = (15,60)
+NOISY_PROMPT_WORDS = (60,120)
 
 _LOREM = (
     "lorem ipsum dolor sit amet consectetur adipiscing elit sed do eiusmod tempor "
@@ -77,6 +61,12 @@ def stop():
     _stop_event.set()
 
 
+def _bell(low: float, high: float) -> float:
+    mean = (low + high) / 2
+    std = (high - low) / 6
+    return max(low, min(high, random.gauss(mean, std)))
+
+
 def _random_prompt(target_words: int) -> str:
     low = max(5, int(target_words * 0.5))
     high = min(len(_LOREM) - 1, int(target_words * 1.5))
@@ -103,22 +93,32 @@ async def _emit(event_type: str, data: dict):
     })
 
 
-async def _user_loop(session: aiohttp.ClientSession, user: dict, redis_client):
-    val = await redis_client.get('config:time_scale')
-    time_scale = float(val) if val else DEFAULT_TIME_SCALE
-    interval = 60.0 / user["rpm"] / time_scale
-    # Stagger start as if each user already sent one request at a random point in their cycle
+async def _get_noisy_ids(redis_client) -> set[int]:
+    members = await redis_client.smembers('config:noisy_users')
+    return {int(m) for m in members}
+
+
+async def _user_loop(session: aiohttp.ClientSession, user_id: int, redis_client):
+    noisy_ids = await _get_noisy_ids(redis_client)
+    is_noisy = user_id in noisy_ids
+    interval = 60.0 / _bell(*(NOISY_RPM if is_noisy else BASELINE_RPM))
     await asyncio.sleep(random.uniform(0, interval))
+
     while not _stop_event.is_set():
-        prompt = _random_prompt(user["prompt_words"])
+        noisy_ids = await _get_noisy_ids(redis_client)
+        is_noisy = user_id in noisy_ids
+        rpm = _bell(*(NOISY_RPM if is_noisy else BASELINE_RPM))
+        prompt_words = random.randint(*(NOISY_PROMPT_WORDS if is_noisy else BASELINE_PROMPT_WORDS))
+
+        prompt = _random_prompt(prompt_words)
         t0 = time.monotonic()
         success = False
         error = ""
         input_tokens = 0
         output_tokens = 0
-
-        await _emit("request_start", {"user_id": user["id"]})
         status_code = 0
+
+        await _emit("request_start", {"user_id": user_id, "noisy": is_noisy})
 
         try:
             async with session.post(
@@ -170,7 +170,8 @@ async def _user_loop(session: aiohttp.ClientSession, user: dict, redis_client):
             snapshot = dict(_stats)
 
         await _emit("result", {
-            "user_id": user["id"],
+            "user_id": user_id,
+            "noisy": is_noisy,
             "status_code": status_code,
             "latency_ms": latency_ms,
             "input_tokens": input_tokens,
@@ -182,9 +183,7 @@ async def _user_loop(session: aiohttp.ClientSession, user: dict, redis_client):
             "avg_latency_ms": round(snapshot["total_latency_ms"] / snapshot["total"]),
         })
 
-        val = await redis_client.get('config:time_scale')
-        time_scale = float(val) if val else DEFAULT_TIME_SCALE
-        interval = 60.0 / user["rpm"] / time_scale
+        interval = 60.0 / rpm
         deadline = time.monotonic() + interval
         while time.monotonic() < deadline and not _stop_event.is_set():
             await asyncio.sleep(0.1)
@@ -197,7 +196,7 @@ async def _run_loop():
     try:
         async with aiohttp.ClientSession() as session:
             await asyncio.gather(*[
-                _user_loop(session, user, redis_client) for user in USERS
+                _user_loop(session, uid, redis_client) for uid in USER_IDS
             ])
     finally:
         await redis_client.aclose()
