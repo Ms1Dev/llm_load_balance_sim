@@ -8,12 +8,16 @@ REDIS_URL = os.environ.get('REDIS_URL', 'redis://redis:6379')
 
 class Config(models.Model):
     rpm_limit = models.PositiveIntegerField(
-        default=30,
+        default=200,
         help_text="Maximum requests per minute allowed by the limiter.",
     )
     tpm_limit = models.PositiveIntegerField(
-        default=10000,
+        default=200000,
         help_text="Maximum tokens per minute allowed by the limiter.",
+    )
+    stats_window_minutes = models.PositiveIntegerField(
+        default=5,
+        help_text="Rolling window in minutes for per-user stats on the dashboard.",
     )
 
     class Meta:
@@ -32,8 +36,9 @@ class Config(models.Model):
     @classmethod
     def get(cls):
         obj, created = cls.objects.get_or_create(pk=1, defaults={
-            'rpm_limit': 120,
-            'tpm_limit': 10000,
+            'rpm_limit': 200,
+            'tpm_limit': 200000,
+            'stats_window_minutes': 5,
         })
         if not created:
             # Always push current values to Redis — save() only runs on create,

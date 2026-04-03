@@ -12,7 +12,7 @@ API_KEY = os.environ.get("OPENAI_API_KEY", "mocked-openai-key-1")
 MODEL = os.environ.get("OPENAI_MODEL", "openai/gpt-4o-mini")
 REDIS_URL = os.environ.get("REDIS_URL", "redis://redis:6379")
 
-USER_IDS = list(range(1, 21))
+USER_IDS = list(range(1, 101))
 
 BASELINE_RPM = (5,20)
 BASELINE_PROMPT_WORDS = (15,60)
@@ -51,6 +51,12 @@ def start():
     _running = True
     _thread = threading.Thread(target=_thread_main, daemon=True)
     _thread.start()
+
+
+def clear_stats():
+    global _stats
+    with _stats_lock:
+        _stats = {"total": 0, "errors": 0, "total_latency_ms": 0}
 
 
 def stop():

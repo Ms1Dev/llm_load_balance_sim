@@ -24,6 +24,7 @@ def dashboard(request):
         "running": runner.is_running(),
         "rpm_limit": config.rpm_limit,
         "tpm_limit": config.tpm_limit,
+        "stats_window_minutes": config.stats_window_minutes,
         "noisy_user_ids": noisy_user_ids,
     })
 
@@ -73,3 +74,10 @@ def control(request):
     elif action == "stop":
         runner.stop()
     return JsonResponse({"running": runner.is_running()})
+
+
+@csrf_exempt
+@require_POST
+def clear_stats(request):
+    runner.clear_stats()
+    return JsonResponse({"ok": True})

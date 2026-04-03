@@ -11,15 +11,14 @@
     <header>
         <h1>LLM Load Balancer Simulator</h1>
         <div class="scale-control">
-            <label for="rpm-limit">RPM</label>
-            <input type="number" id="rpm-limit" min="1" value="{{ rpm_limit }}">
-        </div>
-        <div class="scale-control">
-            <label for="tpm-limit">TPM</label>
-            <input type="number" id="tpm-limit" min="1" value="{{ tpm_limit }}">
+            <label for="tier-select">Tier</label>
+            <select id="tier-select"></select>
         </div>
         <div class="scale-control">
             <button onclick="saveConfig()">Apply</button>
+        </div>
+        <div class="scale-control">
+            <button onclick="clearStats()">Clear data</button>
         </div>
         <div class="status-dot" id="status-dot"></div>
         <button id="play-btn" class="hdr-btn" onclick="toggle()">&#9654; Play</button>
@@ -56,7 +55,16 @@
     </main>
 
     <script>
-        const USER_IDS = Array.from({length: 20}, (_, i) => i + 1);
+        const TIERS = [
+            { label: 'Free',   rpm:      3, tpm:      40_000 },
+            { label: 'Tier 1', rpm:    500, tpm:     200_000 },
+            { label: 'Tier 2', rpm:  2_000, tpm:   2_000_000 },
+            { label: 'Tier 3', rpm:  5_000, tpm:   4_000_000 },
+            { label: 'Tier 4', rpm: 10_000, tpm:  10_000_000 },
+            { label: 'Tier 5', rpm: 30_000, tpm: 150_000_000 },
+        ];
+
+        const USER_IDS = Array.from({length: 100}, (_, i) => i + 1);
         const BASELINE_RPM = 10;
         const NOISY_RPM = 40;
 
@@ -64,8 +72,10 @@
         const userWindow = {};
         USER_IDS.forEach(id => { userWindow[id] = []; });
 
+        const STATS_WINDOW_MS = {{ stats_window_minutes }} * 60 * 1000;
+
         function windowMs() {
-            return 60 * 1000; // one simulated minute in real milliseconds
+            return STATS_WINDOW_MS;
         }
 
         function pruneWindow(id) {
@@ -207,16 +217,37 @@
             dot.classList.toggle('running', val);
         }
 
-        async function saveConfig() {
-            const rpm_limit  = parseInt(document.getElementById('rpm-limit').value, 10);
-            const tpm_limit  = parseInt(document.getElementById('tpm-limit').value, 10);
-            if (!rpm_limit || !tpm_limit) return;
+        function buildTierSelect() {
+            const sel = document.getElementById('tier-select');
+            const currentRpm = {{ rpm_limit }};
+            const currentTpm = {{ tpm_limit }};
+            TIERS.forEach((t, i) => {
+                const opt = document.createElement('option');
+                opt.value = i;
+                opt.textContent = `${t.label} — ${t.rpm.toLocaleString()} RPM / ${t.tpm.toLocaleString()} TPM`;
+                if (t.rpm === currentRpm && t.tpm === currentTpm) opt.selected = true;
+                sel.appendChild(opt);
+            });
+        }
+
+async function saveConfig() {
+            const tier = TIERS[parseInt(document.getElementById('tier-select').value, 10)];
             await fetch('/config/', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ rpm_limit, tpm_limit }),
+                body: JSON.stringify({ rpm_limit: tier.rpm, tpm_limit: tier.tpm }),
             });
         }
+
+        async function clearStats() {
+            await fetch('/clear/', { method: 'POST', headers: { 'Content-Type': 'application/json' } });
+            USER_IDS.forEach(id => { userWindow[id] = []; renderUserMetrics(id); });
+            ['stat-total', 'stat-errors'].forEach(id => document.getElementById(id).textContent = '0');
+            document.getElementById('stat-latency').textContent = '—';
+            document.getElementById('stat-error-rate').textContent = '—';
+        }
+
+        buildTierSelect();
 
         async function toggle() {
             const btn = document.getElementById('play-btn');
