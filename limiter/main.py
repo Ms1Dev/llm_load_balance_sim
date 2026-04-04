@@ -2,6 +2,8 @@ import json
 import os
 import time
 import uuid
+
+from utils.generate import generate_response
 from contextlib import asynccontextmanager
 
 import httpx
@@ -76,10 +78,14 @@ async def sliding_window_try_consume(
 
 
 import tiktoken
+from functools import lru_cache
+
+@lru_cache(maxsize=8)
+def _get_encoder(model: str):
+    return tiktoken.encoding_for_model(model)
 
 def estimate_tokens(model: str, text: str) -> int:
-    enc = tiktoken.encoding_for_model(model)
-    return max(1, len(enc.encode(text)))
+    return max(1, len(_get_encoder(model).encode(text)))
 
 
 def count_input_tokens(model: str, messages: list) -> int:
@@ -180,30 +186,26 @@ async def chat_completions(request: Request):
         return JSONResponse(content=data, status_code=response.status_code, headers=rl_headers)
 
     async def stream_response():
-        output_tokens = 0
-        try:
-            async with client.stream("POST", "/v1/chat/completions", json=body, headers=upstream_headers) as response:
-                async for line in response.aiter_lines():
-                    if line == "data: [DONE]":
-                        usage_chunk = json.dumps({
-                            "choices": [],
-                            "usage": {
-                                "prompt_tokens": input_tokens,
-                                "completion_tokens": output_tokens,
-                                "total_tokens": input_tokens + output_tokens,
-                            },
-                        })
-                        yield f"data: {usage_chunk}\n"
-                    elif line.startswith("data: "):
-                        try:
-                            chunk = json.loads(line[6:])
-                            content = (chunk.get("choices") or [{}])[0].get("delta", {}).get("content") or ""
-                            output_tokens += estimate_tokens(model, content)
-                        except (json.JSONDecodeError, IndexError, KeyError):
-                            pass
-                    yield line + "\n" if line else "\n"
-        finally:
-            print(f"[limiter] rpm_remaining={rpm_remaining} tpm_remaining={tpm_remaining} input={input_tokens} output={output_tokens} reserved={tokens_to_reserve}", flush=True)
+        text = generate_response(input_tokens)
+        output_tokens = estimate_tokens(model, text)
+        resp_id = f"chatcmpl-{uuid.uuid4().hex}"
+
+        yield "data: " + json.dumps({
+            "id": resp_id,
+            "object": "chat.completion.chunk",
+            "choices": [{"index": 0, "delta": {"content": text}, "finish_reason": None}],
+        }) + "\n"
+
+        yield "data: " + json.dumps({
+            "choices": [],
+            "usage": {
+                "prompt_tokens": input_tokens,
+                "completion_tokens": output_tokens,
+                "total_tokens": input_tokens + output_tokens,
+            },
+        }) + "\n"
+        yield "data: [DONE]\n"
+        print(f"[limiter] rpm_remaining={rpm_remaining} tpm_remaining={tpm_remaining} input={input_tokens} output={output_tokens} reserved={tokens_to_reserve}", flush=True)
 
     return StreamingResponse(stream_response(), media_type="text/event-stream", headers=rl_headers)
 

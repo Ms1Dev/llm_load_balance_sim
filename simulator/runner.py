@@ -6,6 +6,18 @@ import threading
 import time
 
 import aiohttp
+import tiktoken
+
+from utils.generate import generate_prompt
+
+
+def _count_tokens(text: str) -> int:
+    norm = MODEL.removeprefix("openai/")
+    try:
+        enc = tiktoken.encoding_for_model(norm)
+    except KeyError:
+        enc = tiktoken.get_encoding("cl100k_base")
+    return len(enc.encode(text))
 
 BASE_URL = os.environ.get("OPENAI_BASE_URL", "http://bifrost:8080/v1")
 API_KEY = os.environ.get("OPENAI_API_KEY", "mocked-openai-key-1")
@@ -14,22 +26,8 @@ REDIS_URL = os.environ.get("REDIS_URL", "redis://redis:6379")
 
 USER_IDS = list(range(1, 101))
 
-BASELINE_RPM = (5,20)
-BASELINE_PROMPT_WORDS = (15,60)
-
-NOISY_RPM = (15,60)
-NOISY_PROMPT_WORDS = (60,120)
-
-_LOREM = (
-    "lorem ipsum dolor sit amet consectetur adipiscing elit sed do eiusmod tempor "
-    "incididunt ut labore et dolore magna aliqua ut enim ad minim veniam quis nostrud "
-    "exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat duis aute "
-    "irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla "
-    "pariatur excepteur sint occaecat cupidatat non proident sunt in culpa qui officia "
-    "deserunt mollit anim id est laborum sed ut perspiciatis unde omnis iste natus error "
-    "sit voluptatem accusantium doloremque laudantium totam rem aperiam eaque ipsa quae "
-    "ab illo inventore veritatis et quasi architecto beatae vitae dicta sunt explicabo"
-).split()
+BASELINE_RPM = (5, 20)
+NOISY_RPM    = (15, 60)
 
 _running = False
 _stop_event = threading.Event()
@@ -75,15 +73,6 @@ def _bell(low: float, high: float) -> float:
     return max(low, min(high, random.gauss(mean, std)))
 
 
-def _random_prompt(target_words: int) -> str:
-    low = max(5, int(target_words * 0.5))
-    high = min(len(_LOREM) - 1, int(target_words * 1.5))
-    length = random.randint(low, high)
-    start = random.randint(0, len(_LOREM) - length)
-    words = _LOREM[start:start + length]
-    words[0] = words[0].capitalize()
-    return " ".join(words) + "?"
-
 
 def _thread_main():
     asyncio.run(_run_loop())
@@ -116,13 +105,11 @@ async def _user_loop(session: aiohttp.ClientSession, user_id: int, redis_client)
         noisy_ids = await _get_noisy_ids(redis_client)
         is_noisy = user_id in noisy_ids
         rpm = _bell(*(NOISY_RPM if is_noisy else BASELINE_RPM))
-        prompt_words = random.randint(*(NOISY_PROMPT_WORDS if is_noisy else BASELINE_PROMPT_WORDS))
-
-        prompt = _random_prompt(prompt_words)
+        prompt = generate_prompt(1)[0]
+        input_tokens = _count_tokens(prompt)  # pre-count so 429s still show real token usage
         t0 = time.monotonic()
         success = False
         error = ""
-        input_tokens = 0
         output_tokens = 0
         status_code = 0
         rpm_remaining = -1
@@ -164,7 +151,7 @@ async def _user_loop(session: aiohttp.ClientSession, user_id: int, redis_client)
                             chunk = json.loads(payload)
                             usage = chunk.get("usage")
                             if usage:
-                                input_tokens = usage.get("prompt_tokens", 0)
+                                input_tokens = usage.get("prompt_tokens", input_tokens)
                                 output_tokens = usage.get("completion_tokens", 0)
                         except (json.JSONDecodeError, KeyError):
                             pass

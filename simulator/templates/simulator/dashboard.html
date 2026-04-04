@@ -121,8 +121,28 @@
             while (el.children.length > CODE_MAX) el.removeChild(el.lastChild);
         }
 
-        // Decay display as old entries leave the window
-        setInterval(() => { USER_IDS.forEach(renderUserMetrics); }, 1000);
+        // Decay display and recompute global stats as old entries leave the window
+        setInterval(() => {
+            USER_IDS.forEach(renderUserMetrics);
+
+            let total = 0, errors = 0, latSum = 0;
+            USER_IDS.forEach(id => {
+                for (const e of userWindow[id]) {
+                    total++;
+                    if (!e.success) errors++;
+                    latSum += e.latency_ms;
+                }
+            });
+            document.getElementById('stat-total').textContent = total;
+            document.getElementById('stat-errors').textContent = errors;
+            if (total > 0) {
+                document.getElementById('stat-latency').textContent = Math.round(latSum / total) + ' ms';
+                document.getElementById('stat-error-rate').textContent = (errors / total * 100).toFixed(1) + '%';
+            } else {
+                document.getElementById('stat-latency').textContent = '—';
+                document.getElementById('stat-error-rate').textContent = '—';
+            }
+        }, 1000);
 
         let running = {{ running|yesno:"true,false" }};
         let noisyIds = new Set({{ noisy_user_ids|default:"[]" }});
@@ -249,13 +269,9 @@ async function saveConfig() {
             await fetch('/clear/', { method: 'POST', headers: { 'Content-Type': 'application/json' } });
             USER_IDS.forEach(id => {
                 userWindow[id] = [];
-                renderUserMetrics(id);
                 const codes = document.getElementById(`codes-${id}`);
                 if (codes) codes.innerHTML = '';
             });
-            ['stat-total', 'stat-errors'].forEach(id => document.getElementById(id).textContent = '0');
-            document.getElementById('stat-latency').textContent = '—';
-            document.getElementById('stat-error-rate').textContent = '—';
             eventLog = [];
             rpmChartData = []; tpmChartData = [];
             rpmChart.data.datasets[0].data = rpmChartData;
@@ -384,18 +400,12 @@ async function saveConfig() {
         }
 
         function onResult(d) {
-            // Global stats
-            document.getElementById('stat-total').textContent = d.total;
-            document.getElementById('stat-errors').textContent = d.errors;
-            document.getElementById('stat-latency').textContent = d.avg_latency_ms + ' ms';
-            const rate = d.total > 0 ? ((d.errors / d.total) * 100).toFixed(1) + '%' : '—';
-            document.getElementById('stat-error-rate').textContent = rate;
-
             // Feed chart event log (all attempts count for RPM; tokens only on success)
-            eventLog.push({ ts: Date.now(), tokens: d.success ? (d.input_tokens + d.output_tokens) : 0 });
+            // input_tokens is pre-counted before the request, so 429s still carry real token usage
+            eventLog.push({ ts: Date.now(), tokens: d.input_tokens + (d.success ? d.output_tokens : 0) });
 
-            // Feed sliding window
-            userWindow[d.user_id].push({ ts: Date.now(), latency_ms: d.latency_ms });
+            // Feed sliding window — success drives global stats via the 1s timer
+            userWindow[d.user_id].push({ ts: Date.now(), latency_ms: d.latency_ms, success: d.success });
             renderUserMetrics(d.user_id);
 
             // RX badge

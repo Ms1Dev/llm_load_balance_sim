@@ -7,6 +7,7 @@ import httpx
 import redis.asyncio as aioredis
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, StreamingResponse
+from starlette.requests import ClientDisconnect
 
 BIFROST_URL = os.environ.get("BIFROST_URL", "http://bifrost:8080/v1")
 REDIS_URL = os.environ.get("REDIS_URL", "redis://redis:6379")
@@ -107,6 +108,13 @@ async def _get_strategies(redis_client: aioredis.Redis) -> set[str]:
 
 @app.post("/v1/chat/completions")
 async def chat_completions(request: Request):
+    # Buffer body immediately — if we wait until after acquire() the client
+    # may have disconnected and the stream is gone, causing ClientDisconnect.
+    try:
+        body = await request.body()
+    except ClientDisconnect:
+        return JSONResponse(status_code=499, content={"detail": "client disconnected"})
+
     redis_client: aioredis.Redis = request.app.state.redis
     strategies = await _get_strategies(redis_client)
 
@@ -118,8 +126,6 @@ async def chat_completions(request: Request):
         # Shadow-track in passthrough so the bucket reflects real load.
         # Toggling throttle on will bite immediately instead of after a warm-up.
         request.app.state.bucket.track()
-
-    body = await request.body()
     forward_headers = {
         k: v for k, v in request.headers.items()
         if k.lower() not in _SKIP_HEADERS
