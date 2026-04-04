@@ -31,6 +31,10 @@ header h1 { font-size: 1.25rem; font-weight: 600; flex: 1; }
     padding: 0.35rem 0.6rem; cursor: pointer; font-size: 0.75rem;
 }
 .scale-control button:hover { background: #475569; }
+.strat-btn { transition: background 0.15s, color 0.15s; }
+.strat-btn.active { background: #0ea5e9; color: #fff; }
+.strat-btn.active:hover { background: #38bdf8; }
+.strategies-label { color: #0ea5e9; font-size: 0.75rem; font-weight: 600; }
 
 /* Noisy toolbar */
 #noisy-toolbar {

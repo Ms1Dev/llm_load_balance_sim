@@ -21,6 +21,11 @@
         <div class="scale-control">
             <button onclick="clearStats()">Clear data</button>
         </div>
+        <div class="scale-control">
+            <label>Strategies</label>
+            <button id="strat-throttle" class="strat-btn" onclick="toggleStrategy('throttle')">Throttle</button>
+            <span id="strategies-label" class="strategies-label"></span>
+        </div>
         <div class="status-dot" id="status-dot"></div>
         <button id="play-btn" class="hdr-btn" onclick="toggle()">&#9654; Play</button>
     </header>
@@ -46,19 +51,19 @@
 
         <div class="stats">
             <div class="stat-card">
-                <div class="label">Total Requests</div>
+                <div class="label">Total Requests per minute</div>
                 <div class="value" id="stat-total">0</div>
             </div>
             <div class="stat-card">
-                <div class="label">Errors</div>
+                <div class="label">Errors per minute</div>
                 <div class="value" id="stat-errors">0</div>
             </div>
             <div class="stat-card">
-                <div class="label">Avg Latency</div>
+                <div class="label">Avg Latency per request</div>
                 <div class="value" id="stat-latency">—</div>
             </div>
             <div class="stat-card">
-                <div class="label">Error Rate</div>
+                <div class="label">Error Rate per minute</div>
                 <div class="value" id="stat-error-rate">—</div>
             </div>
         </div>
@@ -77,47 +82,43 @@
         ];
 
         const USER_IDS = Array.from({length: 100}, (_, i) => i + 1);
-        const BASELINE_RPM = 10;
-        const NOISY_RPM = 40;
 
-        // Per-user sliding window: stores {ts, latency_ms, is429} entries
+        // Per-user sliding window: {ts, latency_ms} — always last 60s so count === observed RPM
         const userWindow = {};
         USER_IDS.forEach(id => { userWindow[id] = []; });
-
-        const STATS_WINDOW_MS = {{ stats_window_minutes }} * 60 * 1000;
-
-        function windowMs() {
-            return STATS_WINDOW_MS;
-        }
+        const USER_TILE_WINDOW_MS = 60 * 1000;
 
         function pruneWindow(id) {
-            const cutoff = Date.now() - windowMs();
+            const cutoff = Date.now() - USER_TILE_WINDOW_MS;
             userWindow[id] = userWindow[id].filter(r => r.ts >= cutoff);
         }
 
         function renderUserMetrics(id) {
             pruneWindow(id);
             const entries = userWindow[id];
-            const latEl     = document.getElementById(`lat-${id}`);
-            const r429rpmEl = document.getElementById(`r429rpm-${id}`);
-            const r429tpmEl = document.getElementById(`r429tpm-${id}`);
+            const latEl = document.getElementById(`lat-${id}`);
+            const rpmEl = document.getElementById(`rpm-label-${id}`);
             if (entries.length === 0) {
-                latEl.textContent = r429rpmEl.textContent = r429tpmEl.textContent = '—';
-                latEl.className = r429rpmEl.className = r429tpmEl.className = 'metric-value';
+                latEl.textContent = '—';
+                latEl.className   = 'metric-value';
+                rpmEl.textContent = '— RPM';
                 return;
             }
-            const avgLat  = Math.round(entries.reduce((s, r) => s + r.latency_ms, 0) / entries.length);
-            const pctRpm  = Math.round(entries.filter(r => r.is429rpm).length / entries.length * 100);
-            const pctTpm  = Math.round(entries.filter(r => r.is429tpm).length / entries.length * 100);
-
+            const avgLat = Math.round(entries.reduce((s, r) => s + r.latency_ms, 0) / entries.length);
             latEl.textContent = avgLat + ' ms';
             latEl.className   = 'metric-value';
+            rpmEl.textContent = entries.length + ' RPM';
+        }
 
-            r429rpmEl.textContent = pctRpm + '%';
-            r429rpmEl.className   = 'metric-value' + (pctRpm >= 30 ? ' high-429' : pctRpm > 0 ? ' mid-429' : '');
-
-            r429tpmEl.textContent = pctTpm + '%';
-            r429tpmEl.className   = 'metric-value' + (pctTpm >= 30 ? ' high-429' : pctTpm > 0 ? ' mid-429' : '');
+        const CODE_MAX = 6;
+        function pushCode(userId, code, success) {
+            const el = document.getElementById(`codes-${userId}`);
+            if (!el) return;
+            const span = document.createElement('span');
+            span.className = 'code-badge ' + (success ? 'code-ok' : code === 429 ? 'code-429' : 'code-err');
+            span.textContent = code;
+            el.insertBefore(span, el.firstChild);
+            while (el.children.length > CODE_MAX) el.removeChild(el.lastChild);
         }
 
         // Decay display as old entries leave the window
@@ -125,6 +126,7 @@
 
         let running = {{ running|yesno:"true,false" }};
         let noisyIds = new Set({{ noisy_user_ids|default:"[]" }});
+        let activeStrategies = new Set({{ active_strategies_json|safe }});
         let selectedIds = new Set();
 
         // Build tiles
@@ -138,7 +140,7 @@
                 <div class="user-header">
                     <span class="user-name">U${id}</span>
                     <span class="noisy-label">NOISY</span>
-                    <span class="user-rpm" id="rpm-label-${id}">${noisyIds.has(id) ? NOISY_RPM : BASELINE_RPM} RPM</span>
+                    <span class="user-rpm" id="rpm-label-${id}">— RPM</span>
                 </div>
                 <div class="badges">
                     <span class="badge tx" id="tx-${id}">TX</span>
@@ -148,14 +150,6 @@
                     <div class="metric">
                         <span class="metric-label">Avg latency</span>
                         <span class="metric-value" id="lat-${id}">—</span>
-                    </div>
-                    <div class="metric">
-                        <span class="metric-label">429 RPM</span>
-                        <span class="metric-value" id="r429rpm-${id}">—</span>
-                    </div>
-                    <div class="metric">
-                        <span class="metric-label">429 TPM</span>
-                        <span class="metric-value" id="r429tpm-${id}">—</span>
                     </div>
                 </div>
             `;
@@ -187,10 +181,8 @@
             noisyIds = new Set(ids);
             USER_IDS.forEach(id => {
                 const tile = document.getElementById(`tile-${id}`);
-                const isNoisy = noisyIds.has(id);
-                tile.classList.toggle('noisy', isNoisy);
-                document.getElementById(`rpm-label-${id}`).textContent =
-                    (isNoisy ? NOISY_RPM : BASELINE_RPM) + ' RPM';
+                tile.classList.toggle('noisy', noisyIds.has(id));
+                renderUserMetrics(id);
             });
         }
 
@@ -255,7 +247,12 @@ async function saveConfig() {
 
         async function clearStats() {
             await fetch('/clear/', { method: 'POST', headers: { 'Content-Type': 'application/json' } });
-            USER_IDS.forEach(id => { userWindow[id] = []; renderUserMetrics(id); });
+            USER_IDS.forEach(id => {
+                userWindow[id] = [];
+                renderUserMetrics(id);
+                const codes = document.getElementById(`codes-${id}`);
+                if (codes) codes.innerHTML = '';
+            });
             ['stat-total', 'stat-errors'].forEach(id => document.getElementById(id).textContent = '0');
             document.getElementById('stat-latency').textContent = '—';
             document.getElementById('stat-error-rate').textContent = '—';
@@ -398,12 +395,12 @@ async function saveConfig() {
             eventLog.push({ ts: Date.now(), tokens: d.success ? (d.input_tokens + d.output_tokens) : 0 });
 
             // Feed sliding window
-            const is429rpm = !d.success && d.error === '429';
-            const is429tpm = !d.success && d.error === '429:tokens';
-            userWindow[d.user_id].push({ ts: Date.now(), latency_ms: d.latency_ms, is429rpm, is429tpm });
+            userWindow[d.user_id].push({ ts: Date.now(), latency_ms: d.latency_ms });
             renderUserMetrics(d.user_id);
 
             // RX badge
+            const is429rpm = !d.success && d.error === '429';
+            const is429tpm = !d.success && d.error === '429:tokens';
             const rx = document.getElementById(`rx-${d.user_id}`);
             if (d.success)      flash(rx, 'ok',   d.status_code || '200');
             else if (is429rpm)  flash(rx, 'r429', 'RPM');
@@ -419,10 +416,35 @@ async function saveConfig() {
                 if (msg.type === 'request_start') flash(document.getElementById(`tx-${msg.data.user_id}`), 'tx', 'TX');
                 if (msg.type === 'result')        onResult(msg.data);
                 if (msg.type === 'noisy_users')   applyNoisyIds(msg.data.noisy_user_ids);
+                if (msg.type === 'strategies')    applyStrategies(msg.data.active_strategies);
             };
             ws.onclose = () => setTimeout(connectWS, 2000);
         }
 
+        function applyStrategies(strategies) {
+            activeStrategies = new Set(strategies);
+            document.querySelectorAll('.strat-btn').forEach(btn => {
+                const name = btn.id.replace('strat-', '');
+                btn.classList.toggle('active', activeStrategies.has(name));
+            });
+            const label = document.getElementById('strategies-label');
+            label.textContent = activeStrategies.size > 0
+                ? '● ' + [...activeStrategies].join(', ')
+                : '';
+        }
+
+        async function toggleStrategy(name) {
+            if (activeStrategies.has(name)) activeStrategies.delete(name);
+            else activeStrategies.add(name);
+            applyStrategies([...activeStrategies]);   // immediate visual feedback
+            await fetch('/strategies/', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ strategies: [...activeStrategies] }),
+            });
+        }
+
+        applyStrategies([...activeStrategies]);
         setRunning(running);
         connectWS();
     </script>

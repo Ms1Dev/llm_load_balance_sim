@@ -34,7 +34,9 @@ _LOREM = (
 _running = False
 _stop_event = threading.Event()
 _thread = None
-_stats = {"total": 0, "errors": 0, "total_latency_ms": 0}
+# Rolling window for dashboard aggregates: (monotonic_ts, success, latency_ms)
+_stats_events: list[tuple[float, bool, int]] = []
+_STATS_WINDOW_SEC = 60.0
 _stats_lock = threading.Lock()
 
 
@@ -43,10 +45,10 @@ def is_running() -> bool:
 
 
 def start():
-    global _running, _thread, _stats
+    global _running, _thread, _stats_events
     if _running:
         return
-    _stats = {"total": 0, "errors": 0, "total_latency_ms": 0}
+    _stats_events = []
     _stop_event.clear()
     _running = True
     _thread = threading.Thread(target=_thread_main, daemon=True)
@@ -54,9 +56,9 @@ def start():
 
 
 def clear_stats():
-    global _stats
+    global _stats_events
     with _stats_lock:
-        _stats = {"total": 0, "errors": 0, "total_latency_ms": 0}
+        _stats_events = []
 
 
 def stop():
@@ -139,7 +141,7 @@ async def _user_loop(session: aiohttp.ClientSession, user_id: int, redis_client)
                     "temperature": 1,
                     "n": 1,
                 },
-                headers={"Authorization": f"Bearer {API_KEY}"},
+                headers={"Authorization": f"Bearer {API_KEY}", "X-User-ID": str(user_id)},
                 timeout=aiohttp.ClientTimeout(total=30),
             ) as resp:
                 status_code = resp.status
@@ -171,13 +173,20 @@ async def _user_loop(session: aiohttp.ClientSession, user_id: int, redis_client)
             error = str(exc)[:120]
 
         latency_ms = round((time.monotonic() - t0) * 1000)
+        t_done = time.monotonic()
 
         with _stats_lock:
-            _stats["total"] += 1
-            if not success:
-                _stats["errors"] += 1
-            _stats["total_latency_ms"] += latency_ms
-            snapshot = dict(_stats)
+            _stats_events.append((t_done, success, latency_ms))
+            cutoff = t_done - _STATS_WINDOW_SEC
+            _stats_events[:] = [e for e in _stats_events if e[0] >= cutoff]
+            n = len(_stats_events)
+            err_n = sum(1 for _, ok, _ in _stats_events if not ok)
+            lat_sum = sum(lat for _, _, lat in _stats_events)
+            snapshot = {
+                "total": n,
+                "errors": err_n,
+                "avg_latency_ms": round(lat_sum / n),
+            }
 
         await _emit("result", {
             "user_id": user_id,
@@ -192,7 +201,7 @@ async def _user_loop(session: aiohttp.ClientSession, user_id: int, redis_client)
             "tpm_remaining": tpm_remaining,
             "total": snapshot["total"],
             "errors": snapshot["errors"],
-            "avg_latency_ms": round(snapshot["total_latency_ms"] / snapshot["total"]),
+            "avg_latency_ms": snapshot["avg_latency_ms"],
         })
 
         interval = 60.0 / rpm

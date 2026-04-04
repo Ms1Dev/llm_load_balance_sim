@@ -16,8 +16,8 @@ class Config(models.Model):
         help_text="Maximum tokens per minute allowed by the limiter.",
     )
     stats_window_minutes = models.PositiveIntegerField(
-        default=5,
-        help_text="Rolling window in minutes for per-user stats on the dashboard.",
+        default=1,
+        help_text="Legacy field; user tiles use a fixed 60s window for RPM and avg latency.",
     )
 
     class Meta:

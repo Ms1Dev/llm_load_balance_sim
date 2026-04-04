@@ -15,17 +15,21 @@ from .models import Config
 REDIS_URL = os.environ.get('REDIS_URL', 'redis://redis:6379')
 
 
+ALLOWED_STRATEGIES = {"throttle"}
+
+
 def dashboard(request):
     config = Config.get()
     r = redis_sync.from_url(REDIS_URL)
     noisy_user_ids = [int(x) for x in r.smembers('config:noisy_users')]
+    active_strategies = [s.decode() for s in r.smembers('config:strategies')]
     r.close()
     return render(request, 'simulator/dashboard.html', {
         "running": runner.is_running(),
         "rpm_limit": config.rpm_limit,
         "tpm_limit": config.tpm_limit,
-        "stats_window_minutes": config.stats_window_minutes,
         "noisy_user_ids": noisy_user_ids,
+        "active_strategies_json": json.dumps(active_strategies),
     })
 
 
@@ -74,6 +78,25 @@ def control(request):
     elif action == "stop":
         runner.stop()
     return JsonResponse({"running": runner.is_running()})
+
+
+@csrf_exempt
+@require_POST
+def set_strategies(request):
+    data = json.loads(request.body)
+    strategies = [s for s in data.get('strategies', []) if s in ALLOWED_STRATEGIES]
+    r = redis_sync.from_url(REDIS_URL)
+    r.delete('config:strategies')
+    if strategies:
+        r.sadd('config:strategies', *strategies)
+    r.close()
+    channel_layer = get_channel_layer()
+    async_to_sync(channel_layer.group_send)("simulator", {
+        "type": "simulator.event",
+        "event_type": "strategies",
+        "data": {"active_strategies": strategies},
+    })
+    return JsonResponse({'strategies': strategies})
 
 
 @csrf_exempt

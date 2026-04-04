@@ -18,6 +18,7 @@ services:
   web:
     build: .
     command: sh -c "python manage.py migrate --no-input && python manage.py collectstatic --no-input && watchfiles --filter python 'daphne -b 0.0.0.0 -p 8000 config.asgi:application'"
+    cpu_shares: 512        # runner is the load generator — lower priority than backend
     env_file:
       - .env
     volumes:
@@ -33,9 +34,28 @@ services:
       DATABASE_PORT: 5432
       SECRET_KEY: ${SECRET_KEY:?SECRET_KEY is required}
       REDIS_URL: redis://redis:6379
+      OPENAI_BASE_URL: http://backend:8003/v1
     depends_on:
       db:
         condition: service_healthy
+      redis:
+        condition: service_started
+      backend:
+        condition: service_started
+
+  backend:
+    build: ./backend
+    cpu_shares: 2048       # system under test — wins CPU contention against the runner
+    ports:
+      - "8003:8003"
+    volumes:
+      - ./backend:/app
+    environment:
+      BIFROST_URL: http://bifrost:8080/v1
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      bifrost:
+        condition: service_started
       redis:
         condition: service_started
 
