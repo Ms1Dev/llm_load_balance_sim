@@ -36,6 +36,6 @@ def generate_prompt(n: int, seed: int = None) -> list[str]:
     token_lengths = generate_prompt_tokens(n, seed)
     return [" ".join(_LOREM[i:i + p]) for i, p in enumerate(token_lengths)]
 
-def generate_response(prompt_tokens: int, seed: int = None) -> str:
+def generate_response(prompt_tokens: int, seed: int = None) -> tuple[str, int]:
     response_tokens = generate_response_tokens(prompt_tokens, seed)
-    return " ".join(_LOREM[prompt_tokens:prompt_tokens + response_tokens])
+    return " ".join(_LOREM[prompt_tokens:prompt_tokens + response_tokens]), response_tokens

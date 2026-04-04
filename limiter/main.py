@@ -77,24 +77,16 @@ async def sliding_window_try_consume(
     return bool(result[0]), int(result[1])
 
 
-import tiktoken
-from functools import lru_cache
-
-@lru_cache(maxsize=8)
-def _get_encoder(model: str):
-    return tiktoken.encoding_for_model(model)
-
-def estimate_tokens(model: str, text: str) -> int:
-    return max(1, len(_get_encoder(model).encode(text)))
+def estimate_tokens(text: str) -> int:
+    return max(1, len(text) // 4)
 
 
-def count_input_tokens(model: str, messages: list) -> int:
-    total = 0
-    for msg in messages:
-        content = msg.get("content", "")
-        if isinstance(content, str):
-            total += estimate_tokens(model, content)
-    return total
+def count_input_tokens(messages: list) -> int:
+    return sum(
+        estimate_tokens(msg.get("content", ""))
+        for msg in messages
+        if isinstance(msg.get("content"), str)
+    )
 
 
 @asynccontextmanager
@@ -114,8 +106,7 @@ async def chat_completions(request: Request):
     body = await request.json()
     stream = body.get("stream", False)
     messages = body.get("messages", [])
-    model = body.get("model", "gpt-4o-mini")
-    input_tokens = count_input_tokens(model, messages)
+    input_tokens = count_input_tokens(messages)
     max_tokens = body.get("max_tokens") or DEFAULT_MAX_TOKENS
     tokens_to_reserve = input_tokens + max_tokens
 
@@ -181,13 +172,12 @@ async def chat_completions(request: Request):
         response = await client.post("/v1/chat/completions", json=body, headers=upstream_headers)
         data = response.json()
         content = (data.get("choices") or [{}])[0].get("message", {}).get("content", "")
-        output_tokens = estimate_tokens(model, content)
+        output_tokens = estimate_tokens(content)
         print(f"[limiter] rpm_remaining={rpm_remaining} tpm_remaining={tpm_remaining} input={input_tokens} output={output_tokens} reserved={tokens_to_reserve}", flush=True)
         return JSONResponse(content=data, status_code=response.status_code, headers=rl_headers)
 
     async def stream_response():
-        text = generate_response(input_tokens)
-        output_tokens = estimate_tokens(model, text)
+        text, output_tokens = generate_response(input_tokens)
         resp_id = f"chatcmpl-{uuid.uuid4().hex}"
 
         yield "data: " + json.dumps({

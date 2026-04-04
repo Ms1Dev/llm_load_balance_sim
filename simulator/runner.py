@@ -26,8 +26,8 @@ REDIS_URL = os.environ.get("REDIS_URL", "redis://redis:6379")
 
 USER_IDS = list(range(1, 101))
 
-BASELINE_RPM = (5, 20)
-NOISY_RPM    = (15, 60)
+BASELINE_RPM = (2, 10)
+NOISY_RPM    = (10, 60)
 
 _running = False
 _stop_event = threading.Event()
