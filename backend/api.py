@@ -18,7 +18,7 @@ _SKIP_HEADERS = {"host", "content-length", "transfer-encoding"}
 
 class TokenBucket:
     """
-    Leaky-bucket rate limiter. Callers await acquire() which blocks until a
+    Leaky-bucket rate vLLM. Callers await acquire() which blocks until a
     token is available. This turns 429s into latency — users wait instead of
     getting errors.
 
@@ -26,7 +26,7 @@ class TokenBucket:
     changes take effect without a restart.
     """
 
-    def __init__(self, rpm: int = DEFAULT_RPM):
+    def __init__(self, rpm):
         self._rpm = max(1, rpm)
         self._tokens = 0.0
         self._last_refill = time.monotonic()
@@ -88,7 +88,9 @@ async def _sync_rate(redis_client: aioredis.Redis, bucket: TokenBucket):
 async def lifespan(app: FastAPI):
     app.state.client = httpx.AsyncClient(base_url=BIFROST_URL, timeout=120.0)
     app.state.redis = aioredis.from_url(REDIS_URL)
-    app.state.bucket = TokenBucket()
+    initial_rpm = await app.state.redis.get("config:rpm_limit")
+    app.state.bucket = TokenBucket(int(initial_rpm) if initial_rpm else DEFAULT_RPM)
+    app.state.throttle_active = False
     app.state.sync_task = asyncio.create_task(
         _sync_rate(app.state.redis, app.state.bucket)
     )
@@ -118,14 +120,19 @@ async def chat_completions(request: Request):
     redis_client: aioredis.Redis = request.app.state.redis
     strategies = await _get_strategies(redis_client)
 
+    bucket: TokenBucket = request.app.state.bucket
     if "throttle" in strategies:
-        # Block until the token bucket allows this request through.
-        # No 429 ever reaches the caller — they just wait longer.
-        await request.app.state.bucket.acquire()
+        if not request.app.state.throttle_active:
+            # Throttle was just enabled — drain pre-accumulated tokens so the
+            # rate limit bites on this request rather than after a long burst.
+            request.app.state.throttle_active = True
+            bucket._tokens = 0.0
+        await bucket.acquire()
     else:
+        request.app.state.throttle_active = False
         # Shadow-track in passthrough so the bucket reflects real load.
         # Toggling throttle on will bite immediately instead of after a warm-up.
-        request.app.state.bucket.track()
+        bucket.track()
     forward_headers = {
         k: v for k, v in request.headers.items()
         if k.lower() not in _SKIP_HEADERS
@@ -143,6 +150,14 @@ async def chat_completions(request: Request):
         k: v for k, v in upstream_resp.headers.items()
         if k.lower() not in {"content-length", "transfer-encoding", "content-encoding"}
     }
+
+    # Bifrost strips x-ratelimit-* headers — inject them from Redis where the
+    # vLLM writes its latest remaining counts after each request.
+    rl_vals = await redis_client.mget("status:rpm_remaining", "status:tpm_remaining")
+    if rl_vals[0] is not None:
+        response_headers["x-ratelimit-remaining-requests"] = rl_vals[0].decode()
+    if rl_vals[1] is not None:
+        response_headers["x-ratelimit-remaining-tokens"] = rl_vals[1].decode()
 
     if upstream_resp.status_code != 200:
         error_body = await upstream_resp.aread()

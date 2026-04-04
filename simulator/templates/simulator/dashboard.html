@@ -274,22 +274,30 @@ async function saveConfig() {
             });
             eventLog = [];
             rpmChartData = []; tpmChartData = [];
+            rpmUsedData  = []; tpmUsedData  = [];
+            latestRpmRemaining = null; latestTpmRemaining = null;
             rpmChart.data.datasets[0].data = rpmChartData;
             tpmChart.data.datasets[0].data = tpmChartData;
             rpmChart.data.datasets[1].data = [];
             tpmChart.data.datasets[1].data = [];
+            rpmChart.data.datasets[2].data = rpmUsedData;
+            tpmChart.data.datasets[2].data = tpmUsedData;
             rpmChart.update('none'); tpmChart.update('none');
         }
 
         // ── Charts ────────────────────────────────────────────────────────────
-        const CHART_WINDOW_MS = 5 * 60 * 1000;   // how far back the chart shows
-        const RATE_WINDOW_MS  = 60 * 1000;        // sliding window matching the rate limiter (1 min)
-        const SAMPLE_INTERVAL_MS = 2000;
+        const CHART_WINDOW_MS = 3 * 60 * 1000;   // how far back the chart shows
+        const RATE_WINDOW_MS  = 15 * 1000;        // short window; counts normalized to per-minute
+        const SAMPLE_INTERVAL_MS = 500;
         let currentRpmLimit = {{ rpm_limit }};
         let currentTpmLimit = {{ tpm_limit }};
         let rpmChartData = [];
         let tpmChartData = [];
-        // Raw event log: {ts, tokens} — kept for RATE_WINDOW_MS only
+        let rpmUsedData  = [];
+        let tpmUsedData  = [];
+        let latestRpmRemaining = null;
+        let latestTpmRemaining = null;
+        // Raw event log: {ts, tokens} — pruned to RATE_WINDOW_MS; counts normalized to per-minute
         let eventLog = [];
 
         function buildChart(canvasId, data, label) {
@@ -316,6 +324,16 @@ async function saveConfig() {
                             pointRadius: 0,
                             borderWidth: 1.5,
                             fill: false,
+                        },
+                        {
+                            label: 'RL Window',
+                            data: [],
+                            borderColor: '#fb923c',
+                            backgroundColor: 'transparent',
+                            fill: false,
+                            tension: 0.3,
+                            pointRadius: 0,
+                            borderWidth: 2,
                         },
                     ],
                 },
@@ -359,18 +377,30 @@ async function saveConfig() {
             eventLog = eventLog.filter(e => e.ts >= rateCutoff);
 
             // Compute current usage in the rate window
-            const rpm = eventLog.length;
-            const tpm = eventLog.reduce((s, e) => s + e.tokens, 0);
+            const rpm = eventLog.length * (60000 / RATE_WINDOW_MS);
+            const tpm = eventLog.reduce((s, e) => s + e.tokens, 0) * (60000 / RATE_WINDOW_MS);
 
             rpmChartData.push({ x: now, y: rpm });
             tpmChartData.push({ x: now, y: tpm });
             rpmChartData = rpmChartData.filter(p => p.x >= chartCutoff);
             tpmChartData = tpmChartData.filter(p => p.x >= chartCutoff);
 
+            // RL-window used: limit minus remaining, from the vLLM's own sliding window headers
+            if (latestRpmRemaining !== null) {
+                rpmUsedData.push({ x: now, y: currentRpmLimit - latestRpmRemaining });
+                rpmUsedData = rpmUsedData.filter(p => p.x >= chartCutoff);
+            }
+            if (latestTpmRemaining !== null) {
+                tpmUsedData.push({ x: now, y: currentTpmLimit - latestTpmRemaining });
+                tpmUsedData = tpmUsedData.filter(p => p.x >= chartCutoff);
+            }
+
             rpmChart.data.datasets[0].data = rpmChartData;
             tpmChart.data.datasets[0].data = tpmChartData;
             rpmChart.data.datasets[1].data = [{ x: chartCutoff, y: currentRpmLimit }, { x: now, y: currentRpmLimit }];
             tpmChart.data.datasets[1].data = [{ x: chartCutoff, y: currentTpmLimit }, { x: now, y: currentTpmLimit }];
+            rpmChart.data.datasets[2].data = rpmUsedData;
+            tpmChart.data.datasets[2].data = tpmUsedData;
             rpmChart.options.scales.x.min = chartCutoff;
             rpmChart.options.scales.x.max = now;
             tpmChart.options.scales.x.min = chartCutoff;
@@ -403,6 +433,10 @@ async function saveConfig() {
             // Feed chart event log (all attempts count for RPM; tokens only on success)
             // input_tokens is pre-counted before the request, so 429s still carry real token usage
             eventLog.push({ ts: Date.now(), tokens: d.input_tokens + (d.success ? d.output_tokens : 0) });
+
+            // Track the vLLM's own remaining counters for the orange RL-window line
+            if (d.rpm_remaining >= 0) latestRpmRemaining = d.rpm_remaining;
+            if (d.tpm_remaining >= 0) latestTpmRemaining = d.tpm_remaining;
 
             // Feed sliding window — success drives global stats via the 1s timer
             userWindow[d.user_id].push({ ts: Date.now(), latency_ms: d.latency_ms, success: d.success });

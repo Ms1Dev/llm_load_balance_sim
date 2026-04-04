@@ -15,10 +15,10 @@ services:
       timeout: 5s
       retries: 5
 
-  web:
+  simulator:
     build: .
     command: sh -c "python manage.py migrate --no-input && python manage.py collectstatic --no-input && watchfiles --filter python 'daphne -b 0.0.0.0 -p 8000 config.asgi:application'"
-    cpu_shares: 512        # runner is the load generator — lower priority than backend
+    cpu_shares: 512 
     env_file:
       - .env
     volumes:
@@ -79,21 +79,18 @@ services:
     depends_on:
       db:
         condition: service_healthy
-      limiter:
+      v_llm:
         condition: service_started
 
-  limiter:
+  v_llm:
     cpu_shares: 1024
     build:
       context: .
-      dockerfile: limiter/Dockerfile
+      dockerfile: vLLM/Dockerfile
     ports:
       - "8002:8002"
     environment:
-      UPSTREAM_URL: http://llm-mock:8001
       REDIS_URL: redis://redis:6379
-      RATE_LIMIT_RPM: "30"
-      RATE_LIMIT_TPM: "10000"
     depends_on:
       - redis
 

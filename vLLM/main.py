@@ -107,8 +107,17 @@ async def chat_completions(request: Request):
     stream = body.get("stream", False)
     messages = body.get("messages", [])
     input_tokens = count_input_tokens(messages)
-    max_tokens = body.get("max_tokens") or DEFAULT_MAX_TOKENS
-    tokens_to_reserve = input_tokens + max_tokens
+
+    # For streaming we generate the response upfront (it's a simulation, so the
+    # output length is known immediately). This lets us charge actual tokens
+    # rather than a max_tokens reservation, keeping the chart and the rate
+    # limiter consistent with each other.
+    if stream:
+        pre_text, pre_output_tokens = generate_response(input_tokens)
+        tokens_to_reserve = input_tokens + pre_output_tokens
+    else:
+        max_tokens = body.get("max_tokens") or DEFAULT_MAX_TOKENS
+        tokens_to_reserve = input_tokens + max_tokens
 
     redis_client: aioredis.Redis = request.app.state.redis
     cfg = await get_config(redis_client)
@@ -173,11 +182,11 @@ async def chat_completions(request: Request):
         data = response.json()
         content = (data.get("choices") or [{}])[0].get("message", {}).get("content", "")
         output_tokens = estimate_tokens(content)
-        print(f"[limiter] rpm_remaining={rpm_remaining} tpm_remaining={tpm_remaining} input={input_tokens} output={output_tokens} reserved={tokens_to_reserve}", flush=True)
+        print(f"[vLLM] rpm_remaining={rpm_remaining} tpm_remaining={tpm_remaining} input={input_tokens} output={output_tokens} reserved={tokens_to_reserve}", flush=True)
         return JSONResponse(content=data, status_code=response.status_code, headers=rl_headers)
 
     async def stream_response():
-        text, output_tokens = generate_response(input_tokens)
+        text, output_tokens = pre_text, pre_output_tokens
         resp_id = f"chatcmpl-{uuid.uuid4().hex}"
 
         yield "data: " + json.dumps({
@@ -195,7 +204,7 @@ async def chat_completions(request: Request):
             },
         }) + "\n"
         yield "data: [DONE]\n"
-        print(f"[limiter] rpm_remaining={rpm_remaining} tpm_remaining={tpm_remaining} input={input_tokens} output={output_tokens} reserved={tokens_to_reserve}", flush=True)
+        print(f"[vLLM] rpm_remaining={rpm_remaining} tpm_remaining={tpm_remaining} input={input_tokens} output={output_tokens} reserved={tokens_to_reserve}", flush=True)
 
     return StreamingResponse(stream_response(), media_type="text/event-stream", headers=rl_headers)
 
