@@ -122,6 +122,7 @@ async def chat_completions(request: Request):
     rpm_ok, rpm_remaining = await sliding_window_try_consume(
         redis_client, "rpm:sliding", rpm_limit, cost=1, window_seconds=SLIDING_WINDOW_SECONDS
     )
+    await redis_client.set('status:rpm_remaining', rpm_remaining, ex=120)
     if not rpm_ok:
         return JSONResponse(
             status_code=429,
@@ -141,6 +142,7 @@ async def chat_completions(request: Request):
     tpm_ok, tpm_remaining = await sliding_window_try_consume(
         redis_client, "tpm:sliding", tpm_limit, cost=tokens_to_reserve, window_seconds=SLIDING_WINDOW_SECONDS
     )
+    await redis_client.set('status:tpm_remaining', tpm_remaining, ex=120)
     if not tpm_ok:
         return JSONResponse(
             status_code=429,

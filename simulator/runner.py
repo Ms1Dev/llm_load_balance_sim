@@ -123,6 +123,8 @@ async def _user_loop(session: aiohttp.ClientSession, user_id: int, redis_client)
         input_tokens = 0
         output_tokens = 0
         status_code = 0
+        rpm_remaining = -1
+        tpm_remaining = -1
 
         await _emit("request_start", {"user_id": user_id, "noisy": is_noisy})
 
@@ -141,6 +143,8 @@ async def _user_loop(session: aiohttp.ClientSession, user_id: int, redis_client)
                 timeout=aiohttp.ClientTimeout(total=30),
             ) as resp:
                 status_code = resp.status
+                rpm_remaining = int(resp.headers.get("x-ratelimit-remaining-requests", -1))
+                tpm_remaining = int(resp.headers.get("x-ratelimit-remaining-tokens", -1))
                 if resp.status == 429:
                     body = await resp.json()
                     error_type = body.get("error", {}).get("type", "")
@@ -184,6 +188,8 @@ async def _user_loop(session: aiohttp.ClientSession, user_id: int, redis_client)
             "output_tokens": output_tokens,
             "success": success,
             "error": error,
+            "rpm_remaining": rpm_remaining,
+            "tpm_remaining": tpm_remaining,
             "total": snapshot["total"],
             "errors": snapshot["errors"],
             "avg_latency_ms": round(snapshot["total_latency_ms"] / snapshot["total"]),

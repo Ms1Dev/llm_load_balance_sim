@@ -6,6 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>LLM Load Balancer Simulator</title>
     <link rel="stylesheet" href="{% static 'app.css' %}">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
 </head>
 <body>
     <header>
@@ -32,6 +33,17 @@
     </div>
 
     <main>
+        <div class="charts">
+            <div class="chart-card">
+                <div class="chart-title">Requests / Minute</div>
+                <canvas id="rpm-chart"></canvas>
+            </div>
+            <div class="chart-card">
+                <div class="chart-title">Tokens / Minute</div>
+                <canvas id="tpm-chart"></canvas>
+            </div>
+        </div>
+
         <div class="stats">
             <div class="stat-card">
                 <div class="label">Total Requests</div>
@@ -237,6 +249,8 @@ async function saveConfig() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ rpm_limit: tier.rpm, tpm_limit: tier.tpm }),
             });
+            currentRpmLimit = tier.rpm;
+            currentTpmLimit = tier.tpm;
         }
 
         async function clearStats() {
@@ -245,7 +259,115 @@ async function saveConfig() {
             ['stat-total', 'stat-errors'].forEach(id => document.getElementById(id).textContent = '0');
             document.getElementById('stat-latency').textContent = '—';
             document.getElementById('stat-error-rate').textContent = '—';
+            eventLog = [];
+            rpmChartData = []; tpmChartData = [];
+            rpmChart.data.datasets[0].data = rpmChartData;
+            tpmChart.data.datasets[0].data = tpmChartData;
+            rpmChart.data.datasets[1].data = [];
+            tpmChart.data.datasets[1].data = [];
+            rpmChart.update('none'); tpmChart.update('none');
         }
+
+        // ── Charts ────────────────────────────────────────────────────────────
+        const CHART_WINDOW_MS = 5 * 60 * 1000;   // how far back the chart shows
+        const RATE_WINDOW_MS  = 60 * 1000;        // sliding window matching the rate limiter (1 min)
+        const SAMPLE_INTERVAL_MS = 2000;
+        let currentRpmLimit = {{ rpm_limit }};
+        let currentTpmLimit = {{ tpm_limit }};
+        let rpmChartData = [];
+        let tpmChartData = [];
+        // Raw event log: {ts, tokens} — kept for RATE_WINDOW_MS only
+        let eventLog = [];
+
+        function buildChart(canvasId, data, label) {
+            const ctx = document.getElementById(canvasId).getContext('2d');
+            return new Chart(ctx, {
+                type: 'line',
+                data: {
+                    datasets: [
+                        {
+                            label,
+                            data,
+                            borderColor: '#38bdf8',
+                            backgroundColor: 'rgba(56,189,248,0.08)',
+                            fill: true,
+                            tension: 0.3,
+                            pointRadius: 0,
+                            borderWidth: 2,
+                        },
+                        {
+                            label: 'Limit',
+                            data: [],
+                            borderColor: '#f87171',
+                            borderDash: [6, 3],
+                            pointRadius: 0,
+                            borderWidth: 1.5,
+                            fill: false,
+                        },
+                    ],
+                },
+                options: {
+                    animation: false,
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        x: {
+                            type: 'linear',
+                            ticks: {
+                                maxTicksLimit: 6,
+                                color: '#64748b',
+                                callback: val => {
+                                    const s = Math.round((Date.now() - val) / 1000);
+                                    return s <= 2 ? 'now' : `-${s}s`;
+                                },
+                            },
+                            grid: { color: '#1e293b' },
+                        },
+                        y: {
+                            beginAtZero: true,
+                            ticks: { color: '#64748b' },
+                            grid: { color: '#334155' },
+                        },
+                    },
+                },
+            });
+        }
+
+        const rpmChart = buildChart('rpm-chart', rpmChartData, 'RPM Usage');
+        const tpmChart = buildChart('tpm-chart', tpmChartData, 'TPM Usage');
+
+        function sampleRateLimits() {
+            const now = Date.now();
+            const chartCutoff = now - CHART_WINDOW_MS;
+            const rateCutoff  = now - RATE_WINDOW_MS;
+
+            // Prune event log to rate window
+            eventLog = eventLog.filter(e => e.ts >= rateCutoff);
+
+            // Compute current usage in the rate window
+            const rpm = eventLog.length;
+            const tpm = eventLog.reduce((s, e) => s + e.tokens, 0);
+
+            rpmChartData.push({ x: now, y: rpm });
+            tpmChartData.push({ x: now, y: tpm });
+            rpmChartData = rpmChartData.filter(p => p.x >= chartCutoff);
+            tpmChartData = tpmChartData.filter(p => p.x >= chartCutoff);
+
+            rpmChart.data.datasets[0].data = rpmChartData;
+            tpmChart.data.datasets[0].data = tpmChartData;
+            rpmChart.data.datasets[1].data = [{ x: chartCutoff, y: currentRpmLimit }, { x: now, y: currentRpmLimit }];
+            tpmChart.data.datasets[1].data = [{ x: chartCutoff, y: currentTpmLimit }, { x: now, y: currentTpmLimit }];
+            rpmChart.options.scales.x.min = chartCutoff;
+            rpmChart.options.scales.x.max = now;
+            tpmChart.options.scales.x.min = chartCutoff;
+            tpmChart.options.scales.x.max = now;
+            rpmChart.update('none');
+            tpmChart.update('none');
+        }
+
+        setInterval(sampleRateLimits, SAMPLE_INTERVAL_MS);
+        // ── End Charts ────────────────────────────────────────────────────────
 
         buildTierSelect();
 
@@ -271,6 +393,9 @@ async function saveConfig() {
             document.getElementById('stat-latency').textContent = d.avg_latency_ms + ' ms';
             const rate = d.total > 0 ? ((d.errors / d.total) * 100).toFixed(1) + '%' : '—';
             document.getElementById('stat-error-rate').textContent = rate;
+
+            // Feed chart event log (all attempts count for RPM; tokens only on success)
+            eventLog.push({ ts: Date.now(), tokens: d.success ? (d.input_tokens + d.output_tokens) : 0 });
 
             // Feed sliding window
             const is429rpm = !d.success && d.error === '429';
