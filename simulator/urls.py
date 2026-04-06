@@ -8,7 +8,6 @@ urlpatterns = [
     path('', views.dashboard, name='dashboard'),
     path('control/', views.control, name='control'),
     path('config/', views.update_config, name='update_config'),
-    path('noisy/', views.set_noisy, name='set_noisy'),
     path('spammer/', views.set_spammer, name='set_spammer'),
     path('bursty/', views.set_bursty, name='set_bursty'),
     path('normal/', views.set_normal, name='set_normal'),

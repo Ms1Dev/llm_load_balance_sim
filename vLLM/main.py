@@ -17,6 +17,9 @@ DEFAULT_RPM_LIMIT = int(os.environ.get("RATE_LIMIT_RPM", "30"))
 DEFAULT_TPM_LIMIT = int(os.environ.get("RATE_LIMIT_TPM", "10000"))
 DEFAULT_MAX_TOKENS = 500
 SLIDING_WINDOW_SECONDS = 60.0
+# Suggested client retry wait (seconds). Kept separate from the sliding window —
+# the window defines the limiter; Retry-After should be a short backoff hint.
+RETRY_AFTER_SECONDS = float(os.environ.get("RATE_LIMIT_RETRY_AFTER", "5"))
 
 _config_cache: dict = {}
 _config_updated_at: float = 0.0
@@ -138,7 +141,7 @@ async def chat_completions(request: Request):
                 "code": "rate_limit_exceeded",
             }},
             headers={
-                "Retry-After": str(max(1, int(SLIDING_WINDOW_SECONDS))),
+                "Retry-After": str(max(1, int(RETRY_AFTER_SECONDS))),
                 "x-ratelimit-limit-requests": str(rpm_limit),
                 "x-ratelimit-remaining-requests": "0",
             },
@@ -158,7 +161,7 @@ async def chat_completions(request: Request):
                 "code": "rate_limit_exceeded",
             }},
             headers={
-                "Retry-After": str(max(1, int(SLIDING_WINDOW_SECONDS))),
+                "Retry-After": str(max(1, int(RETRY_AFTER_SECONDS))),
                 "x-ratelimit-limit-tokens": str(tpm_limit),
                 "x-ratelimit-remaining-tokens": "0",
             },

@@ -61,11 +61,11 @@ class Config(models.Model):
 
 class SimUser(models.Model):
     MODE_NORMAL  = 'normal'
-    MODE_NOISY   = 'noisy'
+    MODE_BURSTY  = 'bursty'
     MODE_SPAMMER = 'spammer'
     MODE_CHOICES = [
         (MODE_NORMAL,  'Normal'),
-        (MODE_NOISY,   'Noisy'),
+        (MODE_BURSTY,  'Bursty'),
         (MODE_SPAMMER, 'Spammer'),
     ]
 
@@ -90,11 +90,11 @@ class SimUser(models.Model):
         super().save(*args, **kwargs)
         r = redis_sync.from_url(REDIS_URL)
         pipe = r.pipeline()
-        pipe.srem('config:noisy_users',    self.id)
+        pipe.srem('config:bursty_users',   self.id)
         pipe.srem('config:spammer_users',  self.id)
         pipe.srem('config:pro_users',      self.id)
-        if self.mode == self.MODE_NOISY:
-            pipe.sadd('config:noisy_users',   self.id)
+        if self.mode == self.MODE_BURSTY:
+            pipe.sadd('config:bursty_users',  self.id)
         elif self.mode == self.MODE_SPAMMER:
             pipe.sadd('config:spammer_users', self.id)
         if self.tier == self.TIER_PRO:
@@ -113,12 +113,12 @@ class SimUser(models.Model):
         users = list(cls.objects.all())
         pipe = r.pipeline()
         # Rebuild mode and tier sets from scratch
-        pipe.delete('config:noisy_users', 'config:spammer_users', 'config:pro_users')
-        noisy_ids   = [u.id for u in users if u.mode == cls.MODE_NOISY]
+        pipe.delete('config:bursty_users', 'config:spammer_users', 'config:pro_users')
+        bursty_ids  = [u.id for u in users if u.mode == cls.MODE_BURSTY]
         spammer_ids = [u.id for u in users if u.mode == cls.MODE_SPAMMER]
         pro_ids     = [u.id for u in users if u.tier == cls.TIER_PRO]
-        if noisy_ids:
-            pipe.sadd('config:noisy_users',   *noisy_ids)
+        if bursty_ids:
+            pipe.sadd('config:bursty_users',  *bursty_ids)
         if spammer_ids:
             pipe.sadd('config:spammer_users', *spammer_ids)
         if pro_ids:

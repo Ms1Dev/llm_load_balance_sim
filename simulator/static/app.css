@@ -52,8 +52,6 @@ header h1 { font-size: 1.25rem; font-weight: 600; flex: 1; }
 }
 #btn-make-normal  { background: #334155; color: #e2e8f0; }
 #btn-make-normal:hover  { background: #475569; }
-#btn-make-noisy   { background: #ea580c; color: #fff; }
-#btn-make-noisy:hover   { background: #c2410c; }
 #btn-make-spammer { background: #dc2626; color: #fff; }
 #btn-make-spammer:hover { background: #b91c1c; }
 #btn-make-bursty  { background: #d97706; color: #fff; }
@@ -96,8 +94,6 @@ main { padding: 2rem; display: grid; gap: 1.5rem; }
 }
 .user-tile:hover { border-color: #475569; }
 .user-tile.selected { border-color: #3b82f6; background: #1e3a5f; }
-.user-tile.noisy   { border-color: #ea580c; background: #1c1007; }
-.user-tile.noisy.selected   { border-color: #fb923c; background: #2c1505; }
 .user-tile.spammer { border-color: #dc2626; background: #1a0505; }
 .user-tile.spammer.selected { border-color: #f87171; background: #2c0808; }
 .user-tile.bursty  { border-color: #d97706; background: #1c1500; }
@@ -112,12 +108,10 @@ main { padding: 2rem; display: grid; gap: 1.5rem; }
     font-size: 0.6rem; font-weight: 700; letter-spacing: 0.05em;
     color: #fff; padding: 0.1rem 0.4rem; border-radius: 0.25rem; display: none;
 }
-.user-tile.noisy   .mode-label.noisy-lbl   { display: inline; background: #ea580c; }
 .user-tile.spammer .mode-label.spammer-lbl { display: inline; background: #dc2626; }
 .user-tile.bursty  .mode-label.bursty-lbl  { display: inline; background: #d97706; }
 .user-tile.pro     .tier-label.pro-lbl     { display: inline; background: #7c3aed; }
 .user-rpm { font-size: 0.7rem; color: #64748b; }
-.user-tile.noisy   .user-rpm { color: #fb923c; }
 .user-tile.spammer .user-rpm { color: #f87171; }
 .user-tile.bursty  .user-rpm { color: #fbbf24; }
 .user-tile.pro     .user-rpm { color: #c4b5fd; }

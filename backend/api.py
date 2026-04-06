@@ -16,11 +16,13 @@ REDIS_URL        = os.environ.get("REDIS_URL",          "redis://redis:6379")
 COST_PER_1K_INPUT  = float(os.environ.get("COST_PER_1K_INPUT",  "0.00015"))
 COST_PER_1K_OUTPUT = float(os.environ.get("COST_PER_1K_OUTPUT", "0.00060"))
 
-MAX_RETRIES: int = 5
-BASE_DELAY: float = 1.0
-MAX_DELAY: float = 60.0
+MAX_RETRIES: int = 3
+BASE_DELAY: float = 2.0
+MAX_DELAY: float = 30.0
 EXPONENTIAL_BASE: float = 2.0
 JITTER: bool = True
+# Upstream Retry-After can be huge; cap so the proxy does not sleep a full minute per 429.
+RETRY_AFTER_CAP: float = float(os.environ.get("RETRY_AFTER_CAP", "15"))
 
 _SKIP_HEADERS = {"host", "content-length", "transfer-encoding"}
 
@@ -48,6 +50,7 @@ def _calculate_delay(attempt: int) -> float:
 async def _sleep_backoff(attempt: int, retry_after_s: float | None = None) -> None:
     delay = _calculate_delay(attempt)
     if retry_after_s is not None:
+        retry_after_s = min(retry_after_s, RETRY_AFTER_CAP)
         delay = max(delay, retry_after_s)
     await asyncio.sleep(delay)
 
@@ -97,7 +100,14 @@ def _parse_usage_from_stream(chunks: list[bytes]) -> tuple[int, int]:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    app.state.client = httpx.AsyncClient(base_url=BIFROST_URL, timeout=120.0)
+    # HTTP/1.1: one in-flight request per connection; default keepalive cap can queue
+    # many parallel proxy calls behind a small pool so backoff sleeps do not overlap.
+    limits = httpx.Limits(max_connections=256, max_keepalive_connections=256)
+    app.state.client = httpx.AsyncClient(
+        base_url=BIFROST_URL,
+        timeout=120.0,
+        limits=limits,
+    )
     app.state.redis  = aioredis.from_url(REDIS_URL)
     yield
     await app.state.client.aclose()

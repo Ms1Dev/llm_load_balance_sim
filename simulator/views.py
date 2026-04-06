@@ -1,6 +1,5 @@
 import json
 import os
-import time
 import urllib.request
 import urllib.error
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -24,15 +23,14 @@ ALLOWED_STRATEGIES = {"backoff", "throttle"}
 
 
 def _broadcast_user_modes(r):
-    """Broadcast the current noisy/spammer/bursty/pro sets over WebSocket."""
-    noisy_ids   = [int(x) for x in r.smembers('config:noisy_users')]
+    """Broadcast the current bursty/spammer/pro sets over WebSocket."""
+    bursty_ids  = [int(x) for x in r.smembers('config:bursty_users')]
     spammer_ids = [int(x) for x in r.smembers('config:spammer_users')]
-    bursty_ids  = [int(x) for x in r.zrangebyscore('config:bursty_users', time.time(), '+inf')]
     pro_ids     = [int(x) for x in r.smembers('config:pro_users')]
     async_to_sync(get_channel_layer().group_send)("simulator", {
         "type": "simulator.event",
         "event_type": "user_modes",
-        "data": {"noisy": noisy_ids, "spammer": spammer_ids, "bursty": bursty_ids, "pro": pro_ids},
+        "data": {"bursty": bursty_ids, "spammer": spammer_ids, "pro": pro_ids},
     })
 
 
@@ -42,22 +40,20 @@ def dashboard(request):
     # Config.get() syncs all config + SimUser modes/vkeys → Redis
     config = Config.get()
     r = redis_sync.from_url(REDIS_URL)
-    noisy_user_ids   = [int(x) for x in r.smembers('config:noisy_users')]
+    bursty_user_ids  = [int(x) for x in r.smembers('config:bursty_users')]
     spammer_user_ids = [int(x) for x in r.smembers('config:spammer_users')]
-    bursty_user_ids  = [int(x) for x in r.zrangebyscore('config:bursty_users', time.time(), '+inf')]
     pro_user_ids     = [int(x) for x in r.smembers('config:pro_users')]
     has_vkeys        = bool(r.exists('config:vkey:1'))
     active_strategies = [s.decode() for s in r.smembers('config:strategies')]
     r.close()
     return render(request, 'simulator/dashboard.html', {
-        "running":        runner.is_running(),
-        "rpm_limit":      config.rpm_limit,
-        "tpm_limit":      config.tpm_limit,
-        "noisy_user_ids":   noisy_user_ids,
-        "spammer_user_ids": spammer_user_ids,
-        "bursty_user_ids":  bursty_user_ids,
-        "pro_user_ids":     pro_user_ids,
-        "has_vkeys":        has_vkeys,
+        "running":           runner.is_running(),
+        "rpm_limit":         config.rpm_limit,
+        "tpm_limit":         config.tpm_limit,
+        "bursty_user_ids":   bursty_user_ids,
+        "spammer_user_ids":  spammer_user_ids,
+        "pro_user_ids":      pro_user_ids,
+        "has_vkeys":         has_vkeys,
         "active_strategies_json": json.dumps(active_strategies)
     })
 
@@ -118,22 +114,6 @@ def clear_stats(request):
 
 @csrf_exempt
 @require_POST
-def set_noisy(request):
-    data = json.loads(request.body)
-    user_ids = [int(i) for i in data.get('user_ids', [])]
-    # Replace the entire noisy set: mark requested users noisy, demote any
-    # previously-noisy users not in the new list back to normal.
-    SimUser.objects.filter(id__in=user_ids).update(mode=SimUser.MODE_NOISY)
-    SimUser.objects.filter(mode=SimUser.MODE_NOISY).exclude(id__in=user_ids).update(mode=SimUser.MODE_NORMAL)
-    r = redis_sync.from_url(REDIS_URL)
-    SimUser.sync_all_to_redis(r)
-    _broadcast_user_modes(r)
-    r.close()
-    return JsonResponse({'ok': True})
-
-
-@csrf_exempt
-@require_POST
 def set_spammer(request):
     data = json.loads(request.body)
     user_ids = [int(i) for i in data.get('user_ids', [])]
@@ -149,15 +129,12 @@ def set_spammer(request):
 @csrf_exempt
 @require_POST
 def set_bursty(request):
-    # Bursty is ephemeral (10s TTL) — Redis only, no DB write.
     data = json.loads(request.body)
     user_ids = [int(i) for i in data.get('user_ids', [])]
+    SimUser.objects.filter(id__in=user_ids).update(mode=SimUser.MODE_BURSTY)
+    SimUser.objects.filter(mode=SimUser.MODE_BURSTY).exclude(id__in=user_ids).update(mode=SimUser.MODE_NORMAL)
     r = redis_sync.from_url(REDIS_URL)
-    if user_ids:
-        r.srem('config:noisy_users',   *user_ids)
-        r.srem('config:spammer_users', *user_ids)
-        expiry = time.time() + 10
-        r.zadd('config:bursty_users', {str(uid): expiry for uid in user_ids})
+    SimUser.sync_all_to_redis(r)
     _broadcast_user_modes(r)
     r.close()
     return JsonResponse({'ok': True})
@@ -172,8 +149,6 @@ def set_normal(request):
         SimUser.objects.filter(id__in=user_ids).update(mode=SimUser.MODE_NORMAL)
     r = redis_sync.from_url(REDIS_URL)
     SimUser.sync_all_to_redis(r)
-    if user_ids:
-        r.zrem('config:bursty_users', *[str(uid) for uid in user_ids])
     _broadcast_user_modes(r)
     r.close()
     return JsonResponse({'ok': True})
@@ -185,7 +160,6 @@ def reset_all_modes(request):
     SimUser.objects.all().update(mode=SimUser.MODE_NORMAL)
     r = redis_sync.from_url(REDIS_URL)
     SimUser.sync_all_to_redis(r)
-    r.delete('config:bursty_users')   # ephemeral ZSET not covered by sync_all_to_redis
     _broadcast_user_modes(r)
     r.close()
     return JsonResponse({'ok': True})

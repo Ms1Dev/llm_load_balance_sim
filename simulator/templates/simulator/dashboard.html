@@ -57,9 +57,8 @@
         <span id="toolbar-label">Click tiles to select users</span>
         <span class="toolbar-sep" id="toolbar-sep-behaviour" style="display:none">Behaviour:</span>
         <button id="btn-make-normal"  onclick="applyMode('normal')"   style="display:none">Normal</button>
-        <button id="btn-make-noisy"   onclick="applyMode('noisy')"    style="display:none">Noisy</button>
+        <button id="btn-make-bursty"  onclick="applyMode('bursty')"   style="display:none">Bursty</button>
         <button id="btn-make-spammer" onclick="applyMode('spammer')"  style="display:none">Spammer</button>
-        <button id="btn-make-bursty"  onclick="applyMode('bursty')"   style="display:none">Bursty (10s)</button>
         <span class="toolbar-sep" id="toolbar-sep-tier" style="display:none">Tier:</span>
         <button id="btn-make-basic"   onclick="applyTier('basic')"    style="display:none">Basic</button>
         <button id="btn-make-pro"     onclick="applyTier('pro')"      style="display:none">Pro</button>
@@ -103,18 +102,18 @@
                         </div>
                     </div>
                     <div class="flex-item" style="flex: 1;">
-                        <div class="title">Noisy <span id="basic-noisy-user-count">0</span></div>
+                        <div class="title">Bursty <span id="basic-bursty-user-count">0</span></div>
                         <div class="statistic">
                             <div class="label">Total Requests per minute</div>
-                            <div class="value" id="basic-noisy-stat-total">0</div>
+                            <div class="value" id="basic-bursty-stat-total">0</div>
                         </div>
                         <div class="statistic">
                             <div class="label">Avg Latency per request</div>
-                            <div class="value" id="basic-noisy-stat-latency">—</div>
+                            <div class="value" id="basic-bursty-stat-latency">—</div>
                         </div>
                         <div class="statistic">
                             <div class="label">Error Rate per minute</div>
-                            <div class="value" id="basic-noisy-stat-error-rate">—</div>
+                            <div class="value" id="basic-bursty-stat-error-rate">—</div>
                         </div>
                     </div>
                     <div class="flex-item" style="flex: 1;">
@@ -153,18 +152,18 @@
                         </div>
                     </div>
                     <div class="flex-item" style="flex: 1;">
-                        <div class="title">Noisy <span id="pro-noisy-user-count">0</span></div>
+                        <div class="title">Bursty <span id="pro-bursty-user-count">0</span></div>
                         <div class="statistic">
                             <div class="label">Total Requests per minute</div>
-                            <div class="value" id="pro-noisy-stat-total">0</div>
+                            <div class="value" id="pro-bursty-stat-total">0</div>
                         </div>
                         <div class="statistic">
                             <div class="label">Avg Latency per request</div>
-                            <div class="value" id="pro-noisy-stat-latency">—</div>
+                            <div class="value" id="pro-bursty-stat-latency">—</div>
                         </div>
                         <div class="statistic">
                             <div class="label">Error Rate per minute</div>
-                            <div class="value" id="pro-noisy-stat-error-rate">—</div>
+                            <div class="value" id="pro-bursty-stat-error-rate">—</div>
                         </div>
                     </div>
                     <div class="flex-item" style="flex: 1;">
@@ -199,7 +198,7 @@
             { label: 'Tier 5', rpm: 30_000, tpm: 150_000_000 },
         ];
 
-        const USER_IDS = Array.from({length: 100}, (_, i) => i + 1);
+        const USER_IDS = Array.from({length: 50}, (_, i) => i + 1);
 
         // Per-user sliding window: {ts, latency_ms} — always last 60s so count === observed RPM
         const userWindow = {};
@@ -245,7 +244,7 @@
 
             // Accumulators: groups[tier][behaviour] = {total, errors, latSum, userCount}
             const tiers = ['basic', 'pro'];
-            const modes = ['normal', 'noisy', 'spammer'];
+            const modes = ['normal', 'bursty', 'spammer'];
             const groups = {};
             for (const t of tiers) {
                 groups[t] = {};
@@ -254,7 +253,7 @@
 
             USER_IDS.forEach(id => {
                 const tier = proIds.has(id) ? 'pro' : 'basic';
-                const mode = spammerIds.has(id) ? 'spammer' : (noisyIds.has(id) ? 'noisy' : 'normal');
+                const mode = spammerIds.has(id) ? 'spammer' : (burstyIds.has(id) ? 'bursty' : 'normal');
                 const g = groups[tier][mode];
                 g.userCount++;
                 for (const e of userWindow[id]) {
@@ -282,18 +281,15 @@
         }, 1000);
 
         let running = {{ running|yesno:"true,false" }};
-        let noisyIds   = new Set({{ noisy_user_ids|safe }});
         let spammerIds = new Set({{ spammer_user_ids|safe }});
         let burstyIds  = new Set({{ bursty_user_ids|safe }});
         let proIds     = new Set({{ pro_user_ids|safe }});
-        const burstyTimers = {};
         let activeStrategies = new Set({{ active_strategies_json|safe }});
         let selectedIds = new Set();
 
         function tileMode(id) {
             if (spammerIds.has(id)) return 'spammer';
             if (burstyIds.has(id))  return 'bursty';
-            if (noisyIds.has(id))   return 'noisy';
             return '';
         }
 
@@ -311,7 +307,6 @@
             div.innerHTML = `
                 <div class="user-header">
                     <span class="user-name">U${id}</span>
-                    <span class="mode-label noisy-lbl">NOISY</span>
                     <span class="mode-label spammer-lbl">SPAM</span>
                     <span class="mode-label bursty-lbl">BURST</span>
                     <span class="tier-label pro-lbl">PRO</span>
@@ -348,43 +343,31 @@
             const n = selectedIds.size;
             document.getElementById('toolbar-label').textContent =
                 n > 0 ? `${n} user${n > 1 ? 's' : ''} selected` : 'Click tiles to select users';
-            const sel = ['btn-make-normal','btn-make-noisy','btn-make-spammer','btn-make-bursty',
+            const sel = ['btn-make-normal','btn-make-bursty','btn-make-spammer',
                          'btn-make-basic','btn-make-pro','btn-clear-sel',
                          'toolbar-sep-behaviour','toolbar-sep-tier'];
             sel.forEach(id => { document.getElementById(id).style.display = n > 0 ? '' : 'none'; });
         }
 
         function applyUserModes(data) {
-            noisyIds   = new Set(data.noisy);
             spammerIds = new Set(data.spammer);
+            burstyIds  = new Set(data.bursty ?? []);
             proIds     = new Set(data.pro ?? []);
-            // Clear existing bursty timers
-            burstyIds.forEach(id => clearTimeout(burstyTimers[id]));
-            burstyIds = new Set(data.bursty);
             USER_IDS.forEach(id => {
                 const tile = document.getElementById(`tile-${id}`);
-                tile.classList.remove('noisy', 'spammer', 'bursty', 'pro');
+                tile.classList.remove('spammer', 'bursty', 'pro');
                 const mode = tileMode(id);
                 if (mode) tile.classList.add(mode);
                 if (proIds.has(id)) tile.classList.add('pro');
             });
-            // Auto-expire bursty tiles after 10s
-            data.bursty.forEach(id => {
-                clearTimeout(burstyTimers[id]);
-                burstyTimers[id] = setTimeout(() => {
-                    burstyIds.delete(id);
-                    document.getElementById(`tile-${id}`)?.classList.remove('bursty');
-                }, 10000);
-            });
         }
 
-        const MODE_ENDPOINTS = { normal: '/normal/', noisy: '/noisy/', spammer: '/spammer/', bursty: '/bursty/' };
+        const MODE_ENDPOINTS = { normal: '/normal/', bursty: '/bursty/', spammer: '/spammer/' };
 
         async function applyMode(mode) {
-            // For noisy/spammer: replace the existing set with selected + existing of same mode
-            // For normal/bursty: just apply to selected users
+            // Replace the entire set for each mode so deselected users revert to normal
             let ids = [...selectedIds];
-            if (mode === 'noisy')   ids = [...new Set([...ids, ...noisyIds])];
+            if (mode === 'bursty')  ids = [...new Set([...ids, ...burstyIds])];
             if (mode === 'spammer') ids = [...new Set([...ids, ...spammerIds])];
             await fetch(MODE_ENDPOINTS[mode], {
                 method: 'POST',
@@ -487,7 +470,7 @@ async function saveConfig() {
         // Raw event log: {ts, tokens} — pruned to RATE_WINDOW_MS; counts normalized to per-minute
         let eventLog = [];
 
-        const LAT_GROUPS = ['basic-normal', 'basic-noisy', 'basic-spammer', 'pro-normal', 'pro-noisy', 'pro-spammer'];
+        const LAT_GROUPS = ['basic-normal', 'basic-bursty', 'basic-spammer', 'pro-normal', 'pro-bursty', 'pro-spammer'];
         const latencyChartData = {};
         LAT_GROUPS.forEach(k => { latencyChartData[k] = []; });
 
@@ -563,10 +546,10 @@ async function saveConfig() {
             const ctx = document.getElementById(canvasId).getContext('2d');
             const series = [
                 { label: 'Basic · Normal',  key: 'basic-normal',  color: '#94a3b8' },
-                { label: 'Basic · Noisy',   key: 'basic-noisy',   color: '#fb923c' },
+                { label: 'Basic · Bursty',  key: 'basic-bursty',  color: '#fb923c' },
                 { label: 'Basic · Spammer', key: 'basic-spammer', color: '#f87171' },
                 { label: 'Pro · Normal',    key: 'pro-normal',    color: '#c4b5fd' },
-                { label: 'Pro · Noisy',     key: 'pro-noisy',     color: '#fbbf24' },
+                { label: 'Pro · Bursty',    key: 'pro-bursty',    color: '#fbbf24' },
                 { label: 'Pro · Spammer',   key: 'pro-spammer',   color: '#f43f5e' },
             ];
             return new Chart(ctx, {
@@ -664,7 +647,7 @@ async function saveConfig() {
             LAT_GROUPS.forEach(k => { latAccum[k] = { total: 0, latSum: 0 }; });
             USER_IDS.forEach(id => {
                 const tier = proIds.has(id) ? 'pro' : 'basic';
-                const mode = spammerIds.has(id) ? 'spammer' : (noisyIds.has(id) ? 'noisy' : 'normal');
+                const mode = spammerIds.has(id) ? 'spammer' : (burstyIds.has(id) ? 'bursty' : 'normal');
                 const g = latAccum[`${tier}-${mode}`];
                 for (const e of userWindow[id]) {
                     if (e.ts >= rateCutoff) { g.total++; g.latSum += e.latency_ms; }

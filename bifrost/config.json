@@ -1,7 +1,6 @@
 {
     "$schema": "https://www.getbifrost.ai/schema",
     "client": {
-        "enable_logging": true,
         "disable_content_logging": false,
         "drop_excess_requests": false,
         "initial_pool_size": 300,
