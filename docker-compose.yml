@@ -60,7 +60,8 @@ services:
         condition: service_started
 
   bifrost:
-    image: maximhq/bifrost:v1.4.7
+    image: maximhq/bifrost
+    entrypoint: ["/bin/sh", "/app/data/init.sh"]
     env_file:
       - ./.env
     container_name: bifrost
@@ -69,6 +70,7 @@ services:
     volumes:
       - bifrost-data:/app/data
       - ./bifrost/config.json:/app/data/config.json:ro
+      - ./bifrost/init.sh:/app/data/init.sh:ro
     environment:
       - BIFROST_LOG_LEVEL=info
       - POSTGRES_HOST=db

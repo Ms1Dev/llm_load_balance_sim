@@ -30,7 +30,7 @@
         "type": "postgres",
         "config": {
             "host": "env.POSTGRES_HOST",
-            "port": 5432,
+            "port": "5432",
             "user": "env.POSTGRES_USER",
             "password": "env.POSTGRES_PASSWORD",
             "db_name": "env.POSTGRES_DB",

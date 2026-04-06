@@ -115,6 +115,11 @@ async def _emit(event_type: str, data: dict):
     })
 
 
+async def _get_user_api_key(redis_client, user_id: int) -> str:
+    key = await redis_client.get(f'config:vkey:{user_id}')
+    return key.decode() if key else API_KEY
+
+
 async def _get_user_rpm(redis_client, user_id: int) -> float:
     """Return current target RPM for this user based on their mode (checked each iteration)."""
     pipe = redis_client.pipeline(transaction=False)
@@ -160,7 +165,7 @@ async def _user_loop(session: aiohttp.ClientSession, user_id: int, redis_client)
                     "temperature": 1,
                     "n": 1,
                 },
-                headers={"Authorization": f"Bearer {API_KEY}", "X-User-ID": str(user_id)},
+                headers={"Authorization": f"Bearer {await _get_user_api_key(redis_client, user_id)}", "X-User-ID": str(user_id)},
                 timeout=aiohttp.ClientTimeout(total=120),
             ) as resp:
                 status_code = resp.status

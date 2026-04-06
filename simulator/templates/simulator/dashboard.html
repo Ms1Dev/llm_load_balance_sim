@@ -36,6 +36,29 @@
             <label>Jitter</label>
             <input type="checkbox" id="bc-jitter" {% if backoff_jitter %}checked{% endif %} onchange="saveBackoffConfig()">
         </div>
+        <div class="scale-control">
+            <label>Virtual Keys</label>
+            <label>RPM/user</label>
+            <input type="number" id="vk-rpm" value="50" min="1" max="10000" style="width:4rem">
+            <label>TPM/user</label>
+            <input type="number" id="vk-tpm" value="50000" min="1000" max="1000000" style="width:5.5rem">
+            <label>Budget $</label>
+            <input type="number" id="vk-budget" value="1.00" min="0.01" step="0.01" style="width:4.5rem">
+            <label>Reset</label>
+            <select id="vk-budget-reset">
+                <option value="1h">1 h</option>
+                <option value="2h">2 h</option>
+                <option value="6h">6 h</option>
+                <option value="24h" selected>24 h</option>
+                <option value="1d">1 d</option>
+                <option value="1M">1 month</option>
+            </select>
+            <button id="btn-assign-keys" onclick="assignVirtualKeys()">Assign</button>
+            <button onclick="clearVirtualKeys()">Clear</button>
+            <span id="vk-status" class="vk-status {% if has_vkeys %}vk-active{% endif %}">
+                {% if has_vkeys %}keys active{% else %}not assigned{% endif %}
+            </span>
+        </div>
         <div class="status-dot" id="status-dot"></div>
         <button id="play-btn" class="hdr-btn" onclick="toggle()">&#9654; Play</button>
     </header>
@@ -549,6 +572,60 @@ async function saveConfig() {
                 body: JSON.stringify({ strategies: [...activeStrategies] }),
             });
         }
+
+        let vkeysActive = {{ has_vkeys|yesno:"true,false" }};
+
+        function _setVkState(active) {
+            vkeysActive = active;
+            const btn = document.getElementById('btn-assign-keys');
+            btn.textContent = active ? 'Update' : 'Assign';
+        }
+
+        async function assignVirtualKeys() {
+            const btn = document.getElementById('btn-assign-keys');
+            const statusEl = document.getElementById('vk-status');
+            btn.disabled = true;
+            const rpm    = parseInt(document.getElementById('vk-rpm').value, 10);
+            const tpm    = parseInt(document.getElementById('vk-tpm').value, 10);
+            const budget = parseFloat(document.getElementById('vk-budget').value);
+            const reset  = document.getElementById('vk-budget-reset').value;
+            const url = vkeysActive ? '/virtual-keys/update/' : '/virtual-keys/';
+            statusEl.textContent = vkeysActive ? 'updating…' : 'creating…';
+            statusEl.className = 'vk-status';
+            try {
+                const resp = await fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ rpm_per_user: rpm, tpm_per_user: tpm, budget_limit: budget, budget_reset: reset }),
+                });
+                const data = await resp.json();
+                const count  = data.created ?? data.updated;
+                const nFail  = (data.failed ?? []).length;
+                if (nFail === 0) {
+                    statusEl.textContent = `${count} keys active`;
+                    statusEl.className = 'vk-status vk-active';
+                    _setVkState(true);
+                } else {
+                    statusEl.textContent = `${count} ok, ${nFail} failed`;
+                    statusEl.className = 'vk-status vk-error';
+                }
+            } catch {
+                statusEl.textContent = 'error';
+                statusEl.className = 'vk-status vk-error';
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        async function clearVirtualKeys() {
+            const statusEl = document.getElementById('vk-status');
+            await fetch('/virtual-keys/clear/', { method: 'POST', headers: { 'Content-Type': 'application/json' } });
+            statusEl.textContent = 'not assigned';
+            statusEl.className = 'vk-status';
+            _setVkState(false);
+        }
+
+        _setVkState(vkeysActive);
 
         applyStrategies([...activeStrategies]);
         setRunning(running);

@@ -35,6 +35,9 @@ header h1 { font-size: 1.25rem; font-weight: 600; flex: 1; }
 .strat-btn.active { background: #0ea5e9; color: #fff; }
 .strat-btn.active:hover { background: #38bdf8; }
 .strategies-label { color: #0ea5e9; font-size: 0.75rem; font-weight: 600; }
+.vk-status { font-size: 0.7rem; color: #64748b; white-space: nowrap; }
+.vk-status.vk-active { color: #4ade80; font-weight: 600; }
+.vk-status.vk-error  { color: #f87171; }
 
 /* Mode toolbar */
 #noisy-toolbar {
