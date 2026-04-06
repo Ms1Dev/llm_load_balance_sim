@@ -77,20 +77,109 @@
 
         <div class="stats">
             <div class="stat-card">
-                <div class="label">Total Requests per minute</div>
-                <div class="value" id="stat-total">0</div>
+                <div class="title">Basic Users <span id="basic-user-count">0</span></div>
+                <div class="flex-container row" style="display: flex; gap: 1.5rem;">
+                    <div class="flex-item" style="flex: 1;">
+                        <div class="title">Normal <span id="basic-normal-user-count">0</span></div>
+                        <div class="statistic">
+                            <div class="label">Total Requests per minute</div>
+                            <div class="value" id="basic-normal-stat-total">0</div>
+                        </div>
+                        <div class="statistic">
+                            <div class="label">Avg Latency per request</div>
+                            <div class="value" id="basic-normal-stat-latency">—</div>
+                        </div>
+                        <div class="statistic">
+                            <div class="label">Error Rate per minute</div>
+                            <div class="value" id="basic-normal-stat-error-rate">—</div>
+                        </div>
+                    </div>
+                    <div class="flex-item" style="flex: 1;">
+                        <div class="title">Noisy <span id="basic-noisy-user-count">0</span></div>
+                        <div class="statistic">
+                            <div class="label">Total Requests per minute</div>
+                            <div class="value" id="basic-noisy-stat-total">0</div>
+                        </div>
+                        <div class="statistic">
+                            <div class="label">Avg Latency per request</div>
+                            <div class="value" id="basic-noisy-stat-latency">—</div>
+                        </div>
+                        <div class="statistic">
+                            <div class="label">Error Rate per minute</div>
+                            <div class="value" id="basic-noisy-stat-error-rate">—</div>
+                        </div>
+                    </div>
+                </div>
             </div>
             <div class="stat-card">
-                <div class="label">Errors per minute</div>
-                <div class="value" id="stat-errors">0</div>
+                <div class="title">Pro Users <span id="pro-user-count">0</span></div>
+                <div class="flex-container row" style="display: flex; gap: 1.5rem;">
+                    <div class="flex-item" style="flex: 1;">
+                        <div class="title">Normal <span id="pro-normal-user-count">0</span></div>
+                        <div class="statistic">
+                            <div class="label">Total Requests per minute</div>
+                            <div class="value" id="pro-normal-stat-total">0</div>
+                        </div>
+                        <div class="statistic">
+                            <div class="label">Avg Latency per request</div>
+                            <div class="value" id="pro-normal-stat-latency">—</div>
+                        </div>
+                        <div class="statistic">
+                            <div class="label">Error Rate per minute</div>
+                            <div class="value" id="pro-normal-stat-error-rate">—</div>
+                        </div>
+                    </div>
+                    <div class="flex-item" style="flex: 1;">
+                        <div class="title">Noisy <span id="pro-noisy-user-count">0</span></div>
+                        <div class="statistic">
+                            <div class="label">Total Requests per minute</div>
+                            <div class="value" id="pro-noisy-stat-total">0</div>
+                        </div>
+                        <div class="statistic">
+                            <div class="label">Avg Latency per request</div>
+                            <div class="value" id="pro-noisy-stat-latency">—</div>
+                        </div>
+                        <div class="statistic">
+                            <div class="label">Error Rate per minute</div>
+                            <div class="value" id="pro-noisy-stat-error-rate">—</div>
+                        </div>
+                    </div>
+                </div>
             </div>
             <div class="stat-card">
-                <div class="label">Avg Latency per request</div>
-                <div class="value" id="stat-latency">—</div>
-            </div>
-            <div class="stat-card">
-                <div class="label">Error breakdown (60s)</div>
-                <div id="stat-error-breakdown" class="breakdown">—</div>
+                <div class="title">All Users</div>
+                <div class="flex-container row" style="display: flex; gap: 1.5rem;">
+                    <div class="flex-item" style="flex: 1;">
+                        <div class="title">Normal <span id="all-normal-user-count">0</span></div>
+                        <div class="statistic">
+                            <div class="label">Total Requests per minute</div>
+                            <div class="value" id="all-normal-stat-total">0</div>
+                        </div>
+                        <div class="statistic">
+                            <div class="label">Avg Latency per request</div>
+                            <div class="value" id="all-normal-stat-latency">—</div>
+                        </div>
+                        <div class="statistic">
+                            <div class="label">Error Rate per minute</div>
+                            <div class="value" id="all-normal-stat-error-rate">—</div>
+                        </div>
+                    </div>
+                    <div class="flex-item" style="flex: 1;">
+                        <div class="title">Noisy <span id="all-noisy-user-count">0</span></div>
+                        <div class="statistic">
+                            <div class="label">Total Requests per minute</div>
+                            <div class="value" id="all-noisy-stat-total">0</div>
+                        </div>
+                        <div class="statistic">
+                            <div class="label">Avg Latency per request</div>
+                            <div class="value" id="all-noisy-stat-latency">—</div>
+                        </div>
+                        <div class="statistic">
+                            <div class="label">Error Rate per minute</div>
+                            <div class="value" id="all-noisy-stat-error-rate">—</div>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
 
