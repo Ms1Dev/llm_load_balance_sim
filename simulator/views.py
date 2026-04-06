@@ -24,14 +24,15 @@ ALLOWED_STRATEGIES = {"backoff", "throttle"}
 
 
 def _broadcast_user_modes(r):
-    """Broadcast the current noisy/spammer/bursty sets over WebSocket."""
+    """Broadcast the current noisy/spammer/bursty/pro sets over WebSocket."""
     noisy_ids   = [int(x) for x in r.smembers('config:noisy_users')]
     spammer_ids = [int(x) for x in r.smembers('config:spammer_users')]
     bursty_ids  = [int(x) for x in r.zrangebyscore('config:bursty_users', time.time(), '+inf')]
+    pro_ids     = [int(x) for x in r.smembers('config:pro_users')]
     async_to_sync(get_channel_layer().group_send)("simulator", {
         "type": "simulator.event",
         "event_type": "user_modes",
-        "data": {"noisy": noisy_ids, "spammer": spammer_ids, "bursty": bursty_ids},
+        "data": {"noisy": noisy_ids, "spammer": spammer_ids, "bursty": bursty_ids, "pro": pro_ids},
     })
 
 
@@ -44,6 +45,7 @@ def dashboard(request):
     noisy_user_ids   = [int(x) for x in r.smembers('config:noisy_users')]
     spammer_user_ids = [int(x) for x in r.smembers('config:spammer_users')]
     bursty_user_ids  = [int(x) for x in r.zrangebyscore('config:bursty_users', time.time(), '+inf')]
+    pro_user_ids     = [int(x) for x in r.smembers('config:pro_users')]
     has_vkeys        = bool(r.exists('config:vkey:1'))
     active_strategies = [s.decode() for s in r.smembers('config:strategies')]
     r.close()
@@ -54,6 +56,7 @@ def dashboard(request):
         "noisy_user_ids":   noisy_user_ids,
         "spammer_user_ids": spammer_user_ids,
         "bursty_user_ids":  bursty_user_ids,
+        "pro_user_ids":     pro_user_ids,
         "has_vkeys":        has_vkeys,
         "active_strategies_json": json.dumps(active_strategies)
     })
@@ -183,6 +186,23 @@ def reset_all_modes(request):
     r = redis_sync.from_url(REDIS_URL)
     SimUser.sync_all_to_redis(r)
     r.delete('config:bursty_users')   # ephemeral ZSET not covered by sync_all_to_redis
+    _broadcast_user_modes(r)
+    r.close()
+    return JsonResponse({'ok': True})
+
+
+@csrf_exempt
+@require_POST
+def set_tier(request):
+    data     = json.loads(request.body)
+    user_ids = [int(i) for i in data.get('user_ids', [])]
+    tier     = data.get('tier', SimUser.TIER_BASIC)
+    if tier not in (SimUser.TIER_BASIC, SimUser.TIER_PRO):
+        return JsonResponse({'error': 'invalid tier'}, status=400)
+    if user_ids:
+        SimUser.objects.filter(id__in=user_ids).update(tier=tier)
+    r = redis_sync.from_url(REDIS_URL)
+    SimUser.sync_all_to_redis(r)
     _broadcast_user_modes(r)
     r.close()
     return JsonResponse({'ok': True})

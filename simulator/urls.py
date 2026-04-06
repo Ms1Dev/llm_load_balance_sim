@@ -13,6 +13,7 @@ urlpatterns = [
     path('bursty/', views.set_bursty, name='set_bursty'),
     path('normal/', views.set_normal, name='set_normal'),
     path('reset-modes/', views.reset_all_modes, name='reset_all_modes'),
+    path('tier/', views.set_tier, name='set_tier'),
     path('virtual-keys/', views.assign_virtual_keys, name='assign_virtual_keys'),
     path('virtual-keys/update/', views.update_virtual_keys, name='update_virtual_keys'),
     path('virtual-keys/clear/', views.clear_virtual_keys, name='clear_virtual_keys'),

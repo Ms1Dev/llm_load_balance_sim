@@ -55,11 +55,15 @@
 
     <div id="noisy-toolbar">
         <span id="toolbar-label">Click tiles to select users</span>
+        <span class="toolbar-sep" id="toolbar-sep-behaviour" style="display:none">Behaviour:</span>
         <button id="btn-make-normal"  onclick="applyMode('normal')"   style="display:none">Normal</button>
         <button id="btn-make-noisy"   onclick="applyMode('noisy')"    style="display:none">Noisy</button>
         <button id="btn-make-spammer" onclick="applyMode('spammer')"  style="display:none">Spammer</button>
         <button id="btn-make-bursty"  onclick="applyMode('bursty')"   style="display:none">Bursty (10s)</button>
-        <button id="btn-reset-modes"  onclick="resetAllModes()">Reset all modes</button>
+        <span class="toolbar-sep" id="toolbar-sep-tier" style="display:none">Tier:</span>
+        <button id="btn-make-basic"   onclick="applyTier('basic')"    style="display:none">Basic</button>
+        <button id="btn-make-pro"     onclick="applyTier('pro')"      style="display:none">Pro</button>
+        <button id="btn-reset-modes"  onclick="resetAllModes()">Reset all</button>
         <button id="btn-clear-sel"    onclick="clearSelection()"      style="display:none">Clear selection</button>
     </div>
 
@@ -109,6 +113,21 @@
                             <div class="value" id="basic-noisy-stat-error-rate">—</div>
                         </div>
                     </div>
+                    <div class="flex-item" style="flex: 1;">
+                        <div class="title">Spammer <span id="basic-spammer-user-count">0</span></div>
+                        <div class="statistic">
+                            <div class="label">Total Requests per minute</div>
+                            <div class="value" id="basic-spammer-stat-total">0</div>
+                        </div>
+                        <div class="statistic">
+                            <div class="label">Avg Latency per request</div>
+                            <div class="value" id="basic-spammer-stat-latency">—</div>
+                        </div>
+                        <div class="statistic">
+                            <div class="label">Error Rate per minute</div>
+                            <div class="value" id="basic-spammer-stat-error-rate">—</div>
+                        </div>
+                    </div>
                 </div>
             </div>
             <div class="stat-card">
@@ -144,42 +163,22 @@
                             <div class="value" id="pro-noisy-stat-error-rate">—</div>
                         </div>
                     </div>
-                </div>
-            </div>
-            <div class="stat-card">
-                <div class="title">All Users</div>
-                <div class="flex-container row" style="display: flex; gap: 1.5rem;">
                     <div class="flex-item" style="flex: 1;">
-                        <div class="title">Normal <span id="all-normal-user-count">0</span></div>
+                        <div class="title">Spammer <span id="pro-spammer-user-count">0</span></div>
                         <div class="statistic">
                             <div class="label">Total Requests per minute</div>
-                            <div class="value" id="all-normal-stat-total">0</div>
+                            <div class="value" id="pro-spammer-stat-total">0</div>
                         </div>
                         <div class="statistic">
                             <div class="label">Avg Latency per request</div>
-                            <div class="value" id="all-normal-stat-latency">—</div>
+                            <div class="value" id="pro-spammer-stat-latency">—</div>
                         </div>
                         <div class="statistic">
                             <div class="label">Error Rate per minute</div>
-                            <div class="value" id="all-normal-stat-error-rate">—</div>
+                            <div class="value" id="pro-spammer-stat-error-rate">—</div>
                         </div>
                     </div>
-                    <div class="flex-item" style="flex: 1;">
-                        <div class="title">Noisy <span id="all-noisy-user-count">0</span></div>
-                        <div class="statistic">
-                            <div class="label">Total Requests per minute</div>
-                            <div class="value" id="all-noisy-stat-total">0</div>
-                        </div>
-                        <div class="statistic">
-                            <div class="label">Avg Latency per request</div>
-                            <div class="value" id="all-noisy-stat-latency">—</div>
-                        </div>
-                        <div class="statistic">
-                            <div class="label">Error Rate per minute</div>
-                            <div class="value" id="all-noisy-stat-error-rate">—</div>
-                        </div>
-                    </div>
-                </div>
+                </div>            
             </div>
         </div>
 
@@ -236,41 +235,53 @@
             while (el.children.length > CODE_MAX) el.removeChild(el.lastChild);
         }
 
-        // Decay display and recompute global stats as old entries leave the window
+        // Decay display and recompute per-group stats every second
         setInterval(() => {
             USER_IDS.forEach(renderUserMetrics);
 
-            let total = 0, errors = 0, latSum = 0;
-            const errorCounts = {};
+            // Accumulators: groups[tier][behaviour] = {total, errors, latSum, userCount}
+            const tiers = ['basic', 'pro'];
+            const modes = ['normal', 'noisy', 'spammer'];
+            const groups = {};
+            for (const t of tiers) {
+                groups[t] = {};
+                for (const m of modes) groups[t][m] = { total: 0, errors: 0, latSum: 0, userCount: 0 };
+            }
+
             USER_IDS.forEach(id => {
+                const tier = proIds.has(id) ? 'pro' : 'basic';
+                const mode = spammerIds.has(id) ? 'spammer' : (noisyIds.has(id) ? 'noisy' : 'normal');
+                const g = groups[tier][mode];
+                g.userCount++;
                 for (const e of userWindow[id]) {
-                    total++;
-                    latSum += e.latency_ms;
-                    if (!e.success) {
-                        errors++;
-                        const key = e.error === '429'        ? 'RPM 429'
-                                  : e.error === '429:tokens' ? 'TPM 429'
-                                  : e.status_code === 504    ? 'Timeout'
-                                  : e.status_code            ? String(e.status_code)
-                                  : 'Err';
-                        errorCounts[key] = (errorCounts[key] || 0) + 1;
-                    }
+                    g.total++;
+                    g.latSum += e.latency_ms;
+                    if (!e.success) g.errors++;
                 }
             });
-            document.getElementById('stat-total').textContent = total;
-            document.getElementById('stat-errors').textContent = errors;
-            document.getElementById('stat-latency').textContent = total > 0 ? Math.round(latSum / total) + ' ms' : '—';
-            const breakdownEl = document.getElementById('stat-error-breakdown');
-            const entries = Object.entries(errorCounts).sort((a, b) => b[1] - a[1]);
-            breakdownEl.innerHTML = entries.length
-                ? entries.map(([k, v]) => `<span>${k}: <b>${v}</b></span>`).join('')
-                : '<span>—</span>';
+
+            for (const t of tiers) {
+                let tierTotal = 0;
+                for (const m of modes) {
+                    const g = groups[t][m];
+                    tierTotal += g.userCount;
+                    const pfx = `${t}-${m}`;
+                    document.getElementById(`${pfx}-user-count`).textContent  = g.userCount;
+                    document.getElementById(`${pfx}-stat-total`).textContent  = g.total;
+                    document.getElementById(`${pfx}-stat-latency`).textContent =
+                        g.total > 0 ? Math.round(g.latSum / g.total) + ' ms' : '—';
+                    document.getElementById(`${pfx}-stat-error-rate`).textContent =
+                        g.total > 0 ? ((g.errors / g.total) * 100).toFixed(1) + '%' : '—';
+                }
+                document.getElementById(`${t}-user-count`).textContent = tierTotal;
+            }
         }, 1000);
 
         let running = {{ running|yesno:"true,false" }};
         let noisyIds   = new Set({{ noisy_user_ids|safe }});
         let spammerIds = new Set({{ spammer_user_ids|safe }});
         let burstyIds  = new Set({{ bursty_user_ids|safe }});
+        let proIds     = new Set({{ pro_user_ids|safe }});
         const burstyTimers = {};
         let activeStrategies = new Set({{ active_strategies_json|safe }});
         let selectedIds = new Set();
@@ -287,7 +298,10 @@
         USER_IDS.forEach(id => {
             const div = document.createElement('div');
             const mode = tileMode(id);
-            div.className = 'user-tile' + (mode ? ' ' + mode : '');
+            let cls = 'user-tile';
+            if (mode) cls += ' ' + mode;
+            if (proIds.has(id)) cls += ' pro';
+            div.className = cls;
             div.id = `tile-${id}`;
             div.onclick = () => toggleSelect(id);
             div.innerHTML = `
@@ -296,6 +310,7 @@
                     <span class="mode-label noisy-lbl">NOISY</span>
                     <span class="mode-label spammer-lbl">SPAM</span>
                     <span class="mode-label bursty-lbl">BURST</span>
+                    <span class="tier-label pro-lbl">PRO</span>
                     <span class="user-rpm" id="rpm-label-${id}">— RPM</span>
                 </div>
                 <div class="badges">
@@ -329,21 +344,25 @@
             const n = selectedIds.size;
             document.getElementById('toolbar-label').textContent =
                 n > 0 ? `${n} user${n > 1 ? 's' : ''} selected` : 'Click tiles to select users';
-            ['btn-make-normal','btn-make-noisy','btn-make-spammer','btn-make-bursty','btn-clear-sel']
-                .forEach(id => { document.getElementById(id).style.display = n > 0 ? '' : 'none'; });
+            const sel = ['btn-make-normal','btn-make-noisy','btn-make-spammer','btn-make-bursty',
+                         'btn-make-basic','btn-make-pro','btn-clear-sel',
+                         'toolbar-sep-behaviour','toolbar-sep-tier'];
+            sel.forEach(id => { document.getElementById(id).style.display = n > 0 ? '' : 'none'; });
         }
 
         function applyUserModes(data) {
             noisyIds   = new Set(data.noisy);
             spammerIds = new Set(data.spammer);
+            proIds     = new Set(data.pro ?? []);
             // Clear existing bursty timers
             burstyIds.forEach(id => clearTimeout(burstyTimers[id]));
             burstyIds = new Set(data.bursty);
             USER_IDS.forEach(id => {
                 const tile = document.getElementById(`tile-${id}`);
-                tile.classList.remove('noisy', 'spammer', 'bursty');
+                tile.classList.remove('noisy', 'spammer', 'bursty', 'pro');
                 const mode = tileMode(id);
                 if (mode) tile.classList.add(mode);
+                if (proIds.has(id)) tile.classList.add('pro');
             });
             // Auto-expire bursty tiles after 10s
             data.bursty.forEach(id => {
@@ -367,6 +386,15 @@
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ user_ids: ids }),
+            });
+            clearSelection();
+        }
+
+        async function applyTier(tier) {
+            await fetch('/tier/', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ user_ids: [...selectedIds], tier }),
             });
             clearSelection();
         }

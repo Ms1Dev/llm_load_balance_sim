@@ -69,8 +69,16 @@ class SimUser(models.Model):
         (MODE_SPAMMER, 'Spammer'),
     ]
 
+    TIER_BASIC = 'basic'
+    TIER_PRO   = 'pro'
+    TIER_CHOICES = [
+        (TIER_BASIC, 'Basic'),
+        (TIER_PRO,   'Pro'),
+    ]
+
     id         = models.PositiveIntegerField(primary_key=True)
     mode       = models.CharField(max_length=10, choices=MODE_CHOICES, default=MODE_NORMAL)
+    tier       = models.CharField(max_length=8,  choices=TIER_CHOICES, default=TIER_BASIC)
     vkey_value = models.CharField(max_length=128, blank=True, default='')
     vkey_id    = models.CharField(max_length=128, blank=True, default='')
 
@@ -84,10 +92,13 @@ class SimUser(models.Model):
         pipe = r.pipeline()
         pipe.srem('config:noisy_users',    self.id)
         pipe.srem('config:spammer_users',  self.id)
+        pipe.srem('config:pro_users',      self.id)
         if self.mode == self.MODE_NOISY:
             pipe.sadd('config:noisy_users',   self.id)
         elif self.mode == self.MODE_SPAMMER:
             pipe.sadd('config:spammer_users', self.id)
+        if self.tier == self.TIER_PRO:
+            pipe.sadd('config:pro_users',     self.id)
         if self.vkey_value:
             pipe.set(f'config:vkey:{self.id}',    self.vkey_value)
             pipe.set(f'config:vkey_id:{self.id}', self.vkey_id)
@@ -101,14 +112,17 @@ class SimUser(models.Model):
         """Rebuild all user-related Redis keys from the DB in a single pipeline."""
         users = list(cls.objects.all())
         pipe = r.pipeline()
-        # Rebuild mode sets from scratch
-        pipe.delete('config:noisy_users', 'config:spammer_users')
+        # Rebuild mode and tier sets from scratch
+        pipe.delete('config:noisy_users', 'config:spammer_users', 'config:pro_users')
         noisy_ids   = [u.id for u in users if u.mode == cls.MODE_NOISY]
         spammer_ids = [u.id for u in users if u.mode == cls.MODE_SPAMMER]
+        pro_ids     = [u.id for u in users if u.tier == cls.TIER_PRO]
         if noisy_ids:
             pipe.sadd('config:noisy_users',   *noisy_ids)
         if spammer_ids:
             pipe.sadd('config:spammer_users', *spammer_ids)
+        if pro_ids:
+            pipe.sadd('config:pro_users',     *pro_ids)
         # Sync virtual keys
         for u in users:
             if u.vkey_value:
