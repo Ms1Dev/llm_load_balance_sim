@@ -227,7 +227,10 @@ async def _user_loop(session: aiohttp.ClientSession, user_id: int, redis_client)
             "avg_latency_ms": snapshot["avg_latency_ms"],
         })
 
-        interval = 60.0 / rpm
+        # Poisson inter-arrival: exponentially distributed with the target rate as the mean.
+        # Cap at 3× mean so an unlucky draw doesn't stall a user tile for ages.
+        mean_interval = 60.0 / rpm
+        interval = min(mean_interval * 3, random.expovariate(rpm / 60.0))
         deadline = time.monotonic() + interval
         while time.monotonic() < deadline and not _stop_event.is_set():
             await asyncio.sleep(0.1)

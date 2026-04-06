@@ -1,5 +1,4 @@
 import json
-import math
 import os
 import random
 import asyncio
@@ -17,9 +16,11 @@ REDIS_URL        = os.environ.get("REDIS_URL",          "redis://redis:6379")
 COST_PER_1K_INPUT  = float(os.environ.get("COST_PER_1K_INPUT",  "0.00015"))
 COST_PER_1K_OUTPUT = float(os.environ.get("COST_PER_1K_OUTPUT", "0.00060"))
 
-BACKOFF_BASE_S   = 1.0
-BACKOFF_MAX_S    = 30.0
-BACKOFF_ATTEMPTS = 4
+MAX_RETRIES: int = 5
+BASE_DELAY: float = 1.0
+MAX_DELAY: float = 60.0
+EXPONENTIAL_BASE: float = 2.0
+JITTER: bool = True
 
 _SKIP_HEADERS = {"host", "content-length", "transfer-encoding"}
 
@@ -36,10 +37,16 @@ def _parse_retry_after(headers: httpx.Headers) -> float | None:
         return None
 
 
+def _calculate_delay(attempt: int) -> float:
+    delay = BASE_DELAY * (EXPONENTIAL_BASE ** attempt)
+    delay = min(delay, MAX_DELAY)
+    if JITTER:
+        delay = delay * (0.5 + random.random())  # 0.5× – 1.5× multiplier
+    return delay
+
+
 async def _sleep_backoff(attempt: int, retry_after_s: float | None = None) -> None:
-    exp    = min(BACKOFF_MAX_S, BACKOFF_BASE_S * (2 ** max(0, attempt - 1)))
-    jitter = random.uniform(0, exp)
-    delay  = min(BACKOFF_MAX_S, exp + jitter)
+    delay = _calculate_delay(attempt)
     if retry_after_s is not None:
         delay = max(delay, retry_after_s)
     await asyncio.sleep(delay)
@@ -125,9 +132,9 @@ async def chat_completions(request: Request):
 
     client: httpx.AsyncClient = request.app.state.client
     last_response = None
-    max_attempts  = BACKOFF_ATTEMPTS if use_backoff else 1
+    max_attempts  = MAX_RETRIES + 1 if use_backoff else 1
 
-    for attempt in range(1, max_attempts + 1):
+    for attempt in range(max_attempts):
         req = client.build_request(
             "POST", "/chat/completions",
             content=body,
@@ -153,7 +160,7 @@ async def chat_completions(request: Request):
                 "ts":      datetime.now().isoformat(),
             }))
 
-            if attempt >= max_attempts:
+            if attempt >= max_attempts - 1:
                 break
 
             retry_after = _parse_retry_after(upstream_resp.headers)

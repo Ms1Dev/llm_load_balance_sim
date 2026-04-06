@@ -77,6 +77,10 @@
                 <div class="chart-title">Tokens / Minute</div>
                 <canvas id="tpm-chart"></canvas>
             </div>
+            <div class="chart-card" style="grid-column: span 2">
+                <div class="chart-title">Avg Latency by User Type</div>
+                <canvas id="latency-chart" style="height: 200px !important"></canvas>
+            </div>
         </div>
 
         <div class="stats">
@@ -461,6 +465,11 @@ async function saveConfig() {
             rpmChart.data.datasets[2].data = rpmUsedData;
             tpmChart.data.datasets[2].data = tpmUsedData;
             rpmChart.update('none'); tpmChart.update('none');
+            LAT_GROUPS.forEach((k, i) => {
+                latencyChartData[k] = [];
+                latencyChart.data.datasets[i].data = [];
+            });
+            latencyChart.update('none');
         }
 
         // ── Charts ────────────────────────────────────────────────────────────
@@ -477,6 +486,10 @@ async function saveConfig() {
         let latestTpmRemaining = null;
         // Raw event log: {ts, tokens} — pruned to RATE_WINDOW_MS; counts normalized to per-minute
         let eventLog = [];
+
+        const LAT_GROUPS = ['basic-normal', 'basic-noisy', 'basic-spammer', 'pro-normal', 'pro-noisy', 'pro-spammer'];
+        const latencyChartData = {};
+        LAT_GROUPS.forEach(k => { latencyChartData[k] = []; });
 
         function buildChart(canvasId, data, label) {
             const ctx = document.getElementById(canvasId).getContext('2d');
@@ -546,6 +559,66 @@ async function saveConfig() {
         const rpmChart = buildChart('rpm-chart', rpmChartData, 'RPM Usage');
         const tpmChart = buildChart('tpm-chart', tpmChartData, 'TPM Usage');
 
+        function buildLatencyChart(canvasId) {
+            const ctx = document.getElementById(canvasId).getContext('2d');
+            const series = [
+                { label: 'Basic · Normal',  key: 'basic-normal',  color: '#94a3b8' },
+                { label: 'Basic · Noisy',   key: 'basic-noisy',   color: '#fb923c' },
+                { label: 'Basic · Spammer', key: 'basic-spammer', color: '#f87171' },
+                { label: 'Pro · Normal',    key: 'pro-normal',    color: '#c4b5fd' },
+                { label: 'Pro · Noisy',     key: 'pro-noisy',     color: '#fbbf24' },
+                { label: 'Pro · Spammer',   key: 'pro-spammer',   color: '#f43f5e' },
+            ];
+            return new Chart(ctx, {
+                type: 'line',
+                data: {
+                    datasets: series.map(s => ({
+                        label: s.label,
+                        data: latencyChartData[s.key],
+                        borderColor: s.color,
+                        backgroundColor: 'transparent',
+                        fill: false,
+                        tension: 0.3,
+                        pointRadius: 0,
+                        borderWidth: 1.5,
+                        spanGaps: true,
+                    })),
+                },
+                options: {
+                    animation: false,
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            display: true,
+                            labels: { color: '#94a3b8', boxWidth: 12, font: { size: 11 } },
+                        },
+                    },
+                    scales: {
+                        x: {
+                            type: 'linear',
+                            ticks: {
+                                maxTicksLimit: 6,
+                                color: '#64748b',
+                                callback: val => {
+                                    const s = Math.round((Date.now() - val) / 1000);
+                                    return s <= 2 ? 'now' : `-${s}s`;
+                                },
+                            },
+                            grid: { color: '#1e293b' },
+                        },
+                        y: {
+                            beginAtZero: true,
+                            ticks: { color: '#64748b', callback: v => v + ' ms' },
+                            grid: { color: '#334155' },
+                        },
+                    },
+                },
+            });
+        }
+
+        const latencyChart = buildLatencyChart('latency-chart');
+
         function sampleRateLimits() {
             const now = Date.now();
             const chartCutoff = now - CHART_WINDOW_MS;
@@ -585,6 +658,27 @@ async function saveConfig() {
             tpmChart.options.scales.x.max = now;
             rpmChart.update('none');
             tpmChart.update('none');
+
+            // Per-group average latency over the rate window
+            const latAccum = {};
+            LAT_GROUPS.forEach(k => { latAccum[k] = { total: 0, latSum: 0 }; });
+            USER_IDS.forEach(id => {
+                const tier = proIds.has(id) ? 'pro' : 'basic';
+                const mode = spammerIds.has(id) ? 'spammer' : (noisyIds.has(id) ? 'noisy' : 'normal');
+                const g = latAccum[`${tier}-${mode}`];
+                for (const e of userWindow[id]) {
+                    if (e.ts >= rateCutoff) { g.total++; g.latSum += e.latency_ms; }
+                }
+            });
+            LAT_GROUPS.forEach((key, i) => {
+                const g = latAccum[key];
+                latencyChartData[key].push({ x: now, y: g.total > 0 ? Math.round(g.latSum / g.total) : null });
+                latencyChartData[key] = latencyChartData[key].filter(p => p.x >= chartCutoff);
+                latencyChart.data.datasets[i].data = latencyChartData[key];
+            });
+            latencyChart.options.scales.x.min = chartCutoff;
+            latencyChart.options.scales.x.max = now;
+            latencyChart.update('none');
         }
 
         setInterval(sampleRateLimits, SAMPLE_INTERVAL_MS);
