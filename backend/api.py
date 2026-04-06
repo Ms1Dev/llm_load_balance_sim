@@ -17,9 +17,9 @@ REDIS_URL        = os.environ.get("REDIS_URL",          "redis://redis:6379")
 COST_PER_1K_INPUT  = float(os.environ.get("COST_PER_1K_INPUT",  "0.00015"))
 COST_PER_1K_OUTPUT = float(os.environ.get("COST_PER_1K_OUTPUT", "0.00060"))
 
-BACKOFF_BASE_S   = float(os.environ.get("BACKOFF_BASE_S",  "1.0"))
-BACKOFF_MAX_S    = float(os.environ.get("BACKOFF_MAX_S",   "30.0"))
-BACKOFF_ATTEMPTS = int(os.environ.get("BACKOFF_ATTEMPTS",  "4"))
+BACKOFF_BASE_S   = 1.0
+BACKOFF_MAX_S    = 30.0
+BACKOFF_ATTEMPTS = 4
 
 _SKIP_HEADERS = {"host", "content-length", "transfer-encoding"}
 

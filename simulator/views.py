@@ -46,12 +46,6 @@ def dashboard(request):
     bursty_user_ids  = [int(x) for x in r.zrangebyscore('config:bursty_users', time.time(), '+inf')]
     has_vkeys        = bool(r.exists('config:vkey:1'))
     active_strategies = [s.decode() for s in r.smembers('config:strategies')]
-    bv = r.mget(
-        'config:backoff:max_retries',
-        'config:backoff:base_delay',
-        'config:backoff:max_delay',
-        'config:backoff:jitter',
-    )
     r.close()
     return render(request, 'simulator/dashboard.html', {
         "running":        runner.is_running(),
@@ -61,11 +55,7 @@ def dashboard(request):
         "spammer_user_ids": spammer_user_ids,
         "bursty_user_ids":  bursty_user_ids,
         "has_vkeys":        has_vkeys,
-        "active_strategies_json": json.dumps(active_strategies),
-        "backoff_max_retries": int(bv[0])   if bv[0] else config.backoff_max_retries,
-        "backoff_base_delay":  float(bv[1]) if bv[1] else config.backoff_base_delay,
-        "backoff_max_delay":   float(bv[2]) if bv[2] else config.backoff_max_delay,
-        "backoff_jitter":      bv[3] != b'0' if bv[3] else config.backoff_jitter,
+        "active_strategies_json": json.dumps(active_strategies)
     })
 
 
@@ -82,23 +72,6 @@ def update_config(request):
         config.tpm_limit = max(1, int(data['tpm_limit']))
     config.save()
     return JsonResponse({'rpm_limit': config.rpm_limit, 'tpm_limit': config.tpm_limit})
-
-
-@csrf_exempt
-@require_POST
-def set_backoff_config(request):
-    data = json.loads(request.body)
-    config = Config.get()
-    if 'max_retries' in data:
-        config.backoff_max_retries = max(0, int(data['max_retries']))
-    if 'base_delay' in data:
-        config.backoff_base_delay = max(0.1, float(data['base_delay']))
-    if 'max_delay' in data:
-        config.backoff_max_delay = max(0.1, float(data['max_delay']))
-    if 'jitter' in data:
-        config.backoff_jitter = bool(data['jitter'])
-    config.save()
-    return JsonResponse({'ok': True})
 
 
 @csrf_exempt

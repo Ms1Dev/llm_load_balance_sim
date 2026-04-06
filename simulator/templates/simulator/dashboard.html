@@ -27,16 +27,6 @@
             <span id="strategies-label" class="strategies-label"></span>
         </div>
         <div class="scale-control">
-            <label>Retries</label>
-            <input type="number" id="bc-retries" value="{{ backoff_max_retries }}" min="0" max="20" style="width:3.5rem" onchange="saveBackoffConfig()">
-            <label>Base s</label>
-            <input type="number" id="bc-base" value="{{ backoff_base_delay }}" min="0.1" max="30" step="0.1" style="width:4rem" onchange="saveBackoffConfig()">
-            <label>Max s</label>
-            <input type="number" id="bc-max" value="{{ backoff_max_delay }}" min="1" max="300" style="width:4rem" onchange="saveBackoffConfig()">
-            <label>Jitter</label>
-            <input type="checkbox" id="bc-jitter" {% if backoff_jitter %}checked{% endif %} onchange="saveBackoffConfig()">
-        </div>
-        <div class="scale-control">
             <label>Virtual Keys</label>
             <label>RPM/user</label>
             <input type="number" id="vk-rpm" value="50" min="1" max="10000" style="width:4rem">
@@ -334,19 +324,6 @@ async function saveConfig() {
             });
             currentRpmLimit = tier.rpm;
             currentTpmLimit = tier.tpm;
-        }
-
-        async function saveBackoffConfig() {
-            await fetch('/backoff-config/', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    max_retries: parseInt(document.getElementById('bc-retries').value, 10),
-                    base_delay:  parseFloat(document.getElementById('bc-base').value),
-                    max_delay:   parseFloat(document.getElementById('bc-max').value),
-                    jitter:      document.getElementById('bc-jitter').checked,
-                }),
-            });
         }
 
         async function clearStats() {

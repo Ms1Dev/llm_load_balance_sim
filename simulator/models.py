@@ -19,10 +19,6 @@ class Config(models.Model):
         default=1,
         help_text="Legacy field; user tiles use a fixed 60s window for RPM and avg latency.",
     )
-    backoff_max_retries = models.PositiveIntegerField(default=5)
-    backoff_base_delay  = models.FloatField(default=1.0)
-    backoff_max_delay   = models.FloatField(default=60.0)
-    backoff_jitter      = models.BooleanField(default=True)
     # Comma-separated active strategy names, e.g. 'backoff,throttle'
     active_strategies   = models.CharField(max_length=64, blank=True, default='')
 
@@ -34,10 +30,6 @@ class Config(models.Model):
         pipe.mset({
             'config:rpm_limit':           self.rpm_limit,
             'config:tpm_limit':           self.tpm_limit,
-            'config:backoff:max_retries': self.backoff_max_retries,
-            'config:backoff:base_delay':  self.backoff_base_delay,
-            'config:backoff:max_delay':   self.backoff_max_delay,
-            'config:backoff:jitter':      '1' if self.backoff_jitter else '0',
         })
         strategies = [s for s in self.active_strategies.split(',') if s]
         pipe.delete('config:strategies')
@@ -58,10 +50,6 @@ class Config(models.Model):
             'rpm_limit':           200,
             'tpm_limit':           200000,
             'stats_window_minutes': 5,
-            'backoff_max_retries': 5,
-            'backoff_base_delay':  1.0,
-            'backoff_max_delay':   60.0,
-            'backoff_jitter':      True,
             'active_strategies':   '',
         })
         r = redis_sync.from_url(REDIS_URL)

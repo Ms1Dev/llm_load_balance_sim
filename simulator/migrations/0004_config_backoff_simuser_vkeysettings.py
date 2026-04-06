@@ -42,26 +42,6 @@ class Migration(migrations.Migration):
             name='active_strategies',
             field=models.CharField(blank=True, default='', max_length=64),
         ),
-        migrations.AddField(
-            model_name='config',
-            name='backoff_base_delay',
-            field=models.FloatField(default=1.0),
-        ),
-        migrations.AddField(
-            model_name='config',
-            name='backoff_jitter',
-            field=models.BooleanField(default=True),
-        ),
-        migrations.AddField(
-            model_name='config',
-            name='backoff_max_delay',
-            field=models.FloatField(default=60.0),
-        ),
-        migrations.AddField(
-            model_name='config',
-            name='backoff_max_retries',
-            field=models.PositiveIntegerField(default=5),
-        ),
         migrations.AlterField(
             model_name='config',
             name='rpm_limit',
