@@ -23,8 +23,18 @@
         </div>
         <div class="scale-control">
             <label>Strategies</label>
-            <button id="strat-throttle" class="strat-btn" onclick="toggleStrategy('throttle')">Throttle</button>
+            <button id="strat-backoff" class="strat-btn" onclick="toggleStrategy('backoff')">Backoff</button>
             <span id="strategies-label" class="strategies-label"></span>
+        </div>
+        <div class="scale-control">
+            <label>Retries</label>
+            <input type="number" id="bc-retries" value="{{ backoff_max_retries }}" min="0" max="20" style="width:3.5rem" onchange="saveBackoffConfig()">
+            <label>Base s</label>
+            <input type="number" id="bc-base" value="{{ backoff_base_delay }}" min="0.1" max="30" step="0.1" style="width:4rem" onchange="saveBackoffConfig()">
+            <label>Max s</label>
+            <input type="number" id="bc-max" value="{{ backoff_max_delay }}" min="1" max="300" style="width:4rem" onchange="saveBackoffConfig()">
+            <label>Jitter</label>
+            <input type="checkbox" id="bc-jitter" {% if backoff_jitter %}checked{% endif %} onchange="saveBackoffConfig()">
         </div>
         <div class="status-dot" id="status-dot"></div>
         <button id="play-btn" class="hdr-btn" onclick="toggle()">&#9654; Play</button>
@@ -32,9 +42,12 @@
 
     <div id="noisy-toolbar">
         <span id="toolbar-label">Click tiles to select users</span>
-        <button id="btn-make-noisy" onclick="applyNoisy()" style="display:none">Make noisy</button>
-        <button id="btn-reset-noisy" onclick="resetNoisy()">Reset all</button>
-        <button id="btn-clear-sel" onclick="clearSelection()" style="display:none">Clear selection</button>
+        <button id="btn-make-normal"  onclick="applyMode('normal')"   style="display:none">Normal</button>
+        <button id="btn-make-noisy"   onclick="applyMode('noisy')"    style="display:none">Noisy</button>
+        <button id="btn-make-spammer" onclick="applyMode('spammer')"  style="display:none">Spammer</button>
+        <button id="btn-make-bursty"  onclick="applyMode('bursty')"   style="display:none">Bursty (10s)</button>
+        <button id="btn-reset-modes"  onclick="resetAllModes()">Reset all modes</button>
+        <button id="btn-clear-sel"    onclick="clearSelection()"      style="display:none">Clear selection</button>
     </div>
 
     <main>
@@ -63,8 +76,8 @@
                 <div class="value" id="stat-latency">—</div>
             </div>
             <div class="stat-card">
-                <div class="label">Error Rate per minute</div>
-                <div class="value" id="stat-error-rate">—</div>
+                <div class="label">Error breakdown (60s)</div>
+                <div id="stat-error-breakdown" class="breakdown">—</div>
             </div>
         </div>
 
@@ -126,40 +139,61 @@
             USER_IDS.forEach(renderUserMetrics);
 
             let total = 0, errors = 0, latSum = 0;
+            const errorCounts = {};
             USER_IDS.forEach(id => {
                 for (const e of userWindow[id]) {
                     total++;
-                    if (!e.success) errors++;
                     latSum += e.latency_ms;
+                    if (!e.success) {
+                        errors++;
+                        const key = e.error === '429'        ? 'RPM 429'
+                                  : e.error === '429:tokens' ? 'TPM 429'
+                                  : e.status_code === 504    ? 'Timeout'
+                                  : e.status_code            ? String(e.status_code)
+                                  : 'Err';
+                        errorCounts[key] = (errorCounts[key] || 0) + 1;
+                    }
                 }
             });
             document.getElementById('stat-total').textContent = total;
             document.getElementById('stat-errors').textContent = errors;
-            if (total > 0) {
-                document.getElementById('stat-latency').textContent = Math.round(latSum / total) + ' ms';
-                document.getElementById('stat-error-rate').textContent = (errors / total * 100).toFixed(1) + '%';
-            } else {
-                document.getElementById('stat-latency').textContent = '—';
-                document.getElementById('stat-error-rate').textContent = '—';
-            }
+            document.getElementById('stat-latency').textContent = total > 0 ? Math.round(latSum / total) + ' ms' : '—';
+            const breakdownEl = document.getElementById('stat-error-breakdown');
+            const entries = Object.entries(errorCounts).sort((a, b) => b[1] - a[1]);
+            breakdownEl.innerHTML = entries.length
+                ? entries.map(([k, v]) => `<span>${k}: <b>${v}</b></span>`).join('')
+                : '<span>—</span>';
         }, 1000);
 
         let running = {{ running|yesno:"true,false" }};
-        let noisyIds = new Set({{ noisy_user_ids|default:"[]" }});
+        let noisyIds   = new Set({{ noisy_user_ids|safe }});
+        let spammerIds = new Set({{ spammer_user_ids|safe }});
+        let burstyIds  = new Set({{ bursty_user_ids|safe }});
+        const burstyTimers = {};
         let activeStrategies = new Set({{ active_strategies_json|safe }});
         let selectedIds = new Set();
+
+        function tileMode(id) {
+            if (spammerIds.has(id)) return 'spammer';
+            if (burstyIds.has(id))  return 'bursty';
+            if (noisyIds.has(id))   return 'noisy';
+            return '';
+        }
 
         // Build tiles
         const grid = document.getElementById('users-grid');
         USER_IDS.forEach(id => {
             const div = document.createElement('div');
-            div.className = 'user-tile' + (noisyIds.has(id) ? ' noisy' : '');
+            const mode = tileMode(id);
+            div.className = 'user-tile' + (mode ? ' ' + mode : '');
             div.id = `tile-${id}`;
             div.onclick = () => toggleSelect(id);
             div.innerHTML = `
                 <div class="user-header">
                     <span class="user-name">U${id}</span>
-                    <span class="noisy-label">NOISY</span>
+                    <span class="mode-label noisy-lbl">NOISY</span>
+                    <span class="mode-label spammer-lbl">SPAM</span>
+                    <span class="mode-label bursty-lbl">BURST</span>
                     <span class="user-rpm" id="rpm-label-${id}">— RPM</span>
                 </div>
                 <div class="badges">
@@ -193,36 +227,50 @@
             const n = selectedIds.size;
             document.getElementById('toolbar-label').textContent =
                 n > 0 ? `${n} user${n > 1 ? 's' : ''} selected` : 'Click tiles to select users';
-            document.getElementById('btn-make-noisy').style.display = n > 0 ? '' : 'none';
-            document.getElementById('btn-clear-sel').style.display  = n > 0 ? '' : 'none';
+            ['btn-make-normal','btn-make-noisy','btn-make-spammer','btn-make-bursty','btn-clear-sel']
+                .forEach(id => { document.getElementById(id).style.display = n > 0 ? '' : 'none'; });
         }
 
-        function applyNoisyIds(ids) {
-            noisyIds = new Set(ids);
+        function applyUserModes(data) {
+            noisyIds   = new Set(data.noisy);
+            spammerIds = new Set(data.spammer);
+            // Clear existing bursty timers
+            burstyIds.forEach(id => clearTimeout(burstyTimers[id]));
+            burstyIds = new Set(data.bursty);
             USER_IDS.forEach(id => {
                 const tile = document.getElementById(`tile-${id}`);
-                tile.classList.toggle('noisy', noisyIds.has(id));
-                renderUserMetrics(id);
+                tile.classList.remove('noisy', 'spammer', 'bursty');
+                const mode = tileMode(id);
+                if (mode) tile.classList.add(mode);
+            });
+            // Auto-expire bursty tiles after 10s
+            data.bursty.forEach(id => {
+                clearTimeout(burstyTimers[id]);
+                burstyTimers[id] = setTimeout(() => {
+                    burstyIds.delete(id);
+                    document.getElementById(`tile-${id}`)?.classList.remove('bursty');
+                }, 10000);
             });
         }
 
-        async function applyNoisy() {
-            const ids = [...selectedIds, ...noisyIds]; // add to existing noisy set
-            const unique = [...new Set(ids)];
-            await fetch('/noisy/', {
+        const MODE_ENDPOINTS = { normal: '/normal/', noisy: '/noisy/', spammer: '/spammer/', bursty: '/bursty/' };
+
+        async function applyMode(mode) {
+            // For noisy/spammer: replace the existing set with selected + existing of same mode
+            // For normal/bursty: just apply to selected users
+            let ids = [...selectedIds];
+            if (mode === 'noisy')   ids = [...new Set([...ids, ...noisyIds])];
+            if (mode === 'spammer') ids = [...new Set([...ids, ...spammerIds])];
+            await fetch(MODE_ENDPOINTS[mode], {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ user_ids: unique }),
+                body: JSON.stringify({ user_ids: ids }),
             });
             clearSelection();
         }
 
-        async function resetNoisy() {
-            await fetch('/noisy/', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ user_ids: [] }),
-            });
+        async function resetAllModes() {
+            await fetch('/reset-modes/', { method: 'POST', headers: { 'Content-Type': 'application/json' } });
         }
 
         function flash(el, colorClass, text) {
@@ -263,6 +311,19 @@ async function saveConfig() {
             });
             currentRpmLimit = tier.rpm;
             currentTpmLimit = tier.tpm;
+        }
+
+        async function saveBackoffConfig() {
+            await fetch('/backoff-config/', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    max_retries: parseInt(document.getElementById('bc-retries').value, 10),
+                    base_delay:  parseFloat(document.getElementById('bc-base').value),
+                    max_delay:   parseFloat(document.getElementById('bc-max').value),
+                    jitter:      document.getElementById('bc-jitter').checked,
+                }),
+            });
         }
 
         async function clearStats() {
@@ -438,18 +499,19 @@ async function saveConfig() {
             if (d.rpm_remaining >= 0) latestRpmRemaining = d.rpm_remaining;
             if (d.tpm_remaining >= 0) latestTpmRemaining = d.tpm_remaining;
 
-            // Feed sliding window — success drives global stats via the 1s timer
-            userWindow[d.user_id].push({ ts: Date.now(), latency_ms: d.latency_ms, success: d.success });
+            // Feed sliding window — includes error type for breakdown stats
+            userWindow[d.user_id].push({ ts: Date.now(), latency_ms: d.latency_ms, success: d.success, error: d.error, status_code: d.status_code });
             renderUserMetrics(d.user_id);
 
             // RX badge
             const is429rpm = !d.success && d.error === '429';
             const is429tpm = !d.success && d.error === '429:tokens';
             const rx = document.getElementById(`rx-${d.user_id}`);
-            if (d.success)      flash(rx, 'ok',   d.status_code || '200');
-            else if (is429rpm)  flash(rx, 'r429', 'RPM');
-            else if (is429tpm)  flash(rx, 'r429', 'TPM');
-            else                flash(rx, 'err',  d.status_code || 'ERR');
+            if      (d.success)     flash(rx, 'ok',   d.status_code || '200');
+            else if (is429rpm)      flash(rx, 'r429', 'RPM');
+            else if (is429tpm)      flash(rx, 'r429', 'TPM');
+            else if (d.status_code) flash(rx, 'err',  d.status_code);
+            else                    flash(rx, 'err',  'ERR');
         }
 
         function connectWS() {
@@ -459,7 +521,7 @@ async function saveConfig() {
                 if (msg.type === 'status')        setRunning(msg.data.running);
                 if (msg.type === 'request_start') flash(document.getElementById(`tx-${msg.data.user_id}`), 'tx', 'TX');
                 if (msg.type === 'result')        onResult(msg.data);
-                if (msg.type === 'noisy_users')   applyNoisyIds(msg.data.noisy_user_ids);
+                if (msg.type === 'user_modes')    applyUserModes(msg.data);
                 if (msg.type === 'strategies')    applyStrategies(msg.data.active_strategies);
             };
             ws.onclose = () => setTimeout(connectWS, 2000);

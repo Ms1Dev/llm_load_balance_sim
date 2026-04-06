@@ -6,8 +6,9 @@ import threading
 import time
 
 import aiohttp
+import math
 import tiktoken
-
+from enum import Enum
 from utils.generate import generate_prompt
 
 
@@ -26,8 +27,18 @@ REDIS_URL = os.environ.get("REDIS_URL", "redis://redis:6379")
 
 USER_IDS = list(range(1, 101))
 
-BASELINE_RPM = (2, 10)
-NOISY_RPM    = (10, 60)
+BASELINE_RPM = 4
+NOISY_RPM    = 40
+SPAMMER_RPM  = 200
+BURSTY_RPM   = 150
+VARIABILITY  = 5
+
+class Usage(Enum):
+    CONISTENT = "consistent"
+    SINE_WAVE = "sine_wave"
+    BURSTY = "bursty"
+
+USAGE_MULTIPLIER = Usage.SINE_WAVE
 
 _running = False
 _stop_event = threading.Event()
@@ -37,6 +48,20 @@ _stats_events: list[tuple[float, bool, int]] = []
 _STATS_WINDOW_SEC = 60.0
 _stats_lock = threading.Lock()
 
+
+
+def get_usage_multiplier(usage: Usage) -> tuple[float, float]:
+    if usage == Usage.CONISTENT:
+        return 1
+    if usage == Usage.SINE_WAVE:
+        # Generate a sine multiplier between 0.5 and 1.5.
+        # The value completes one full cycle every minute.
+        t = time.time()  # current time in seconds
+        # (t % 60) goes from 0 to 59 within each minute
+        phase = (t % 60) / 60.0  # 0 to <1 over a minute
+        # Sine in [0, 2pi] over a minute
+        sine_value = 0.5 * (math.sin(2 * math.pi * phase) + 1) + 0.5  # Range: 0.5—1.5
+        return sine_value
 
 def is_running() -> bool:
     return _running
@@ -90,21 +115,28 @@ async def _emit(event_type: str, data: dict):
     })
 
 
-async def _get_noisy_ids(redis_client) -> set[int]:
-    members = await redis_client.smembers('config:noisy_users')
-    return {int(m) for m in members}
+async def _get_user_rpm(redis_client, user_id: int) -> float:
+    """Return current target RPM for this user based on their mode (checked each iteration)."""
+    pipe = redis_client.pipeline(transaction=False)
+    pipe.sismember('config:spammer_users', str(user_id))
+    pipe.zscore('config:bursty_users', str(user_id))
+    pipe.sismember('config:noisy_users', str(user_id))
+    is_spammer, bursty_score, is_noisy = await pipe.execute()
+    if is_spammer:
+        return SPAMMER_RPM
+    if bursty_score is not None and float(bursty_score) > time.time():
+        return BURSTY_RPM
+    base = NOISY_RPM if is_noisy else BASELINE_RPM
+    return _bell(max(1, base - VARIABILITY), base + VARIABILITY) * get_usage_multiplier(USAGE_MULTIPLIER)
 
 
 async def _user_loop(session: aiohttp.ClientSession, user_id: int, redis_client):
-    noisy_ids = await _get_noisy_ids(redis_client)
-    is_noisy = user_id in noisy_ids
-    interval = 60.0 / _bell(*(NOISY_RPM if is_noisy else BASELINE_RPM))
+    rpm = await _get_user_rpm(redis_client, user_id)
+    interval = 60.0 / max(1, rpm)
     await asyncio.sleep(random.uniform(0, interval))
 
     while not _stop_event.is_set():
-        noisy_ids = await _get_noisy_ids(redis_client)
-        is_noisy = user_id in noisy_ids
-        rpm = _bell(*(NOISY_RPM if is_noisy else BASELINE_RPM))
+        rpm = await _get_user_rpm(redis_client, user_id)
         prompt = generate_prompt(1)[0]
         input_tokens = _count_tokens(prompt)  # pre-count so 429s still show real token usage
         t0 = time.monotonic()
@@ -115,7 +147,7 @@ async def _user_loop(session: aiohttp.ClientSession, user_id: int, redis_client)
         rpm_remaining = -1
         tpm_remaining = -1
 
-        await _emit("request_start", {"user_id": user_id, "noisy": is_noisy})
+        await _emit("request_start", {"user_id": user_id})
 
         try:
             async with session.post(
@@ -129,7 +161,7 @@ async def _user_loop(session: aiohttp.ClientSession, user_id: int, redis_client)
                     "n": 1,
                 },
                 headers={"Authorization": f"Bearer {API_KEY}", "X-User-ID": str(user_id)},
-                timeout=aiohttp.ClientTimeout(total=30),
+                timeout=aiohttp.ClientTimeout(total=120),
             ) as resp:
                 status_code = resp.status
                 rpm_remaining = int(resp.headers.get("x-ratelimit-remaining-requests", -1))
@@ -177,7 +209,6 @@ async def _user_loop(session: aiohttp.ClientSession, user_id: int, redis_client)
 
         await _emit("result", {
             "user_id": user_id,
-            "noisy": is_noisy,
             "status_code": status_code,
             "latency_ms": latency_ms,
             "input_tokens": input_tokens,

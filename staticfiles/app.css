@@ -36,23 +36,29 @@ header h1 { font-size: 1.25rem; font-weight: 600; flex: 1; }
 .strat-btn.active:hover { background: #38bdf8; }
 .strategies-label { color: #0ea5e9; font-size: 0.75rem; font-weight: 600; }
 
-/* Noisy toolbar */
+/* Mode toolbar */
 #noisy-toolbar {
     background: #1c1917; border-bottom: 1px solid #292524;
-    padding: 0.6rem 2rem; display: flex; align-items: center; gap: 1rem;
-    font-size: 0.8rem; color: #a8a29e;
+    padding: 0.6rem 2rem; display: flex; align-items: center; gap: 0.6rem;
+    font-size: 0.8rem; color: #a8a29e; flex-wrap: wrap;
 }
-#noisy-toolbar span { flex: 1; }
+#noisy-toolbar span { flex: 1; min-width: 8rem; }
 #noisy-toolbar button {
     padding: 0.35rem 0.9rem; border-radius: 0.375rem; border: none;
     font-size: 0.75rem; font-weight: 600; cursor: pointer;
 }
-#btn-make-noisy { background: #ea580c; color: #fff; }
-#btn-make-noisy:hover { background: #c2410c; }
-#btn-reset-noisy { background: #334155; color: #e2e8f0; }
-#btn-reset-noisy:hover { background: #475569; }
-#btn-clear-sel { background: transparent; color: #64748b; border: 1px solid #334155 !important; }
-#btn-clear-sel:hover { color: #94a3b8; }
+#btn-make-normal  { background: #334155; color: #e2e8f0; }
+#btn-make-normal:hover  { background: #475569; }
+#btn-make-noisy   { background: #ea580c; color: #fff; }
+#btn-make-noisy:hover   { background: #c2410c; }
+#btn-make-spammer { background: #dc2626; color: #fff; }
+#btn-make-spammer:hover { background: #b91c1c; }
+#btn-make-bursty  { background: #d97706; color: #fff; }
+#btn-make-bursty:hover  { background: #b45309; }
+#btn-reset-modes  { background: #1e293b; color: #64748b; border: 1px solid #334155 !important; }
+#btn-reset-modes:hover  { color: #94a3b8; }
+#btn-clear-sel    { background: transparent; color: #64748b; border: 1px solid #334155 !important; }
+#btn-clear-sel:hover    { color: #94a3b8; }
 
 main { padding: 2rem; display: grid; gap: 1.5rem; }
 
@@ -66,6 +72,9 @@ main { padding: 2rem; display: grid; gap: 1.5rem; }
 .stat-card { background: #1e293b; border: 1px solid #334155; border-radius: 0.75rem; padding: 1rem 1.25rem; }
 .stat-card .label { font-size: 0.7rem; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.4rem; }
 .stat-card .value { font-size: 1.75rem; font-weight: 700; color: #f1f5f9; }
+.stat-card .breakdown { display: flex; flex-direction: column; gap: 0.2rem; margin-top: 0.25rem; }
+.stat-card .breakdown span { font-size: 0.8rem; color: #94a3b8; }
+.stat-card .breakdown span b { color: #f1f5f9; font-weight: 600; }
 
 .users { display: grid; grid-template-columns: repeat(10, 1fr); gap: 0.5rem; }
 @media (max-width: 1400px) { .users { grid-template-columns: repeat(8, 1fr); } }
@@ -79,19 +88,26 @@ main { padding: 2rem; display: grid; gap: 1.5rem; }
 }
 .user-tile:hover { border-color: #475569; }
 .user-tile.selected { border-color: #3b82f6; background: #1e3a5f; }
-.user-tile.noisy { border-color: #ea580c; background: #1c1007; }
-.user-tile.noisy.selected { border-color: #fb923c; background: #2c1505; }
+.user-tile.noisy   { border-color: #ea580c; background: #1c1007; }
+.user-tile.noisy.selected   { border-color: #fb923c; background: #2c1505; }
+.user-tile.spammer { border-color: #dc2626; background: #1a0505; }
+.user-tile.spammer.selected { border-color: #f87171; background: #2c0808; }
+.user-tile.bursty  { border-color: #d97706; background: #1c1500; }
+.user-tile.bursty.selected  { border-color: #fbbf24; background: #2c2000; }
 
 .user-header { display: flex; align-items: center; justify-content: space-between; gap: 0.4rem; }
 .user-name { font-size: 0.75rem; font-weight: 700; color: #f1f5f9; }
-.noisy-label {
+.mode-label {
     font-size: 0.6rem; font-weight: 700; letter-spacing: 0.05em;
-    background: #ea580c; color: #fff; padding: 0.1rem 0.4rem; border-radius: 0.25rem;
-    display: none;
+    color: #fff; padding: 0.1rem 0.4rem; border-radius: 0.25rem; display: none;
 }
-.user-tile.noisy .noisy-label { display: inline; }
+.user-tile.noisy   .mode-label.noisy-lbl   { display: inline; background: #ea580c; }
+.user-tile.spammer .mode-label.spammer-lbl { display: inline; background: #dc2626; }
+.user-tile.bursty  .mode-label.bursty-lbl  { display: inline; background: #d97706; }
 .user-rpm { font-size: 0.7rem; color: #64748b; }
-.user-tile.noisy .user-rpm { color: #fb923c; }
+.user-tile.noisy   .user-rpm { color: #fb923c; }
+.user-tile.spammer .user-rpm { color: #f87171; }
+.user-tile.bursty  .user-rpm { color: #fbbf24; }
 
 .user-metrics { display: flex; gap: 0.3rem; }
 .metric { flex: 1; background: #0f172a; border-radius: 0.25rem; padding: 0.2rem 0.3rem; }
