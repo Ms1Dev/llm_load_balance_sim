@@ -19,6 +19,10 @@ class Config(models.Model):
         default=1,
         help_text="Legacy field; user tiles use a fixed 60s window for RPM and avg latency.",
     )
+    normal_user_rpm = models.PositiveIntegerField(
+        default=6,
+        help_text="Average requests per minute for normal (non-spammer, non-bursty) users.",
+    )
     # Comma-separated active strategy names, e.g. 'backoff,throttle'
     active_strategies   = models.CharField(max_length=64, blank=True, default='')
 
@@ -28,8 +32,9 @@ class Config(models.Model):
     def _sync_to_redis(self, r):
         pipe = r.pipeline()
         pipe.mset({
-            'config:rpm_limit':           self.rpm_limit,
-            'config:tpm_limit':           self.tpm_limit,
+            'config:rpm_limit':        self.rpm_limit,
+            'config:tpm_limit':        self.tpm_limit,
+            'config:normal_user_rpm':  self.normal_user_rpm,
         })
         strategies = [s for s in self.active_strategies.split(',') if s]
         pipe.delete('config:strategies')
@@ -50,6 +55,7 @@ class Config(models.Model):
             'rpm_limit':           200,
             'tpm_limit':           200000,
             'stats_window_minutes': 5,
+            'normal_user_rpm':     6,
             'active_strategies':   '',
         })
         r = redis_sync.from_url(REDIS_URL)
@@ -134,10 +140,16 @@ class SimUser(models.Model):
 
 
 class VirtualKeySettings(models.Model):
+    # Basic tier settings
     rpm_per_user  = models.PositiveIntegerField(default=50)
     tpm_per_user  = models.PositiveIntegerField(default=50000)
     budget_limit  = models.FloatField(default=1.0)
     budget_reset  = models.CharField(max_length=10, default='24h')
+    # Pro tier settings
+    pro_rpm_per_user = models.PositiveIntegerField(default=100)
+    pro_tpm_per_user = models.PositiveIntegerField(default=100000)
+    pro_budget_limit = models.FloatField(default=5.0)
+    pro_budget_reset = models.CharField(max_length=10, default='24h')
 
     class Meta:
         verbose_name = verbose_name_plural = 'Virtual Key Settings'
@@ -153,5 +165,9 @@ class VirtualKeySettings(models.Model):
             'tpm_per_user': 50000,
             'budget_limit': 1.0,
             'budget_reset': '24h',
+            'pro_rpm_per_user': 100,
+            'pro_tpm_per_user': 100000,
+            'pro_budget_limit': 5.0,
+            'pro_budget_reset': '24h',
         })
         return obj

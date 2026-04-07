@@ -24,7 +24,7 @@ header h1 { font-size: 1.25rem; font-weight: 600; flex: 1; }
 }
 .form-row {
     display: flex; align-items: center; gap: 0.5rem;
-    font-size: 0.8rem; color: #94a3b8;
+    font-size: 0.8rem; color: #94a3b8; flex-wrap: wrap;
 }
 .form-row label { white-space: nowrap; }
 .form-row input[type=number] {
@@ -64,6 +64,32 @@ header h1 { font-size: 1.25rem; font-weight: 600; flex: 1; }
 .vk-status { font-size: 0.7rem; color: #64748b; white-space: nowrap; }
 .vk-status.vk-active { color: #4ade80; font-weight: 600; }
 .vk-status.vk-error  { color: #f87171; }
+.vk-tier-label {
+    font-size: 0.6rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em;
+    color: #94a3b8; background: #1e293b; border: 1px solid #334155;
+    border-radius: 0.25rem; padding: 0.15rem 0.4rem; white-space: nowrap;
+}
+.vk-tier-label.vk-tier-pro { color: #c4b5fd; border-color: #7c3aed; background: #1a1040; }
+
+.vk-grid {
+    display: grid;
+    grid-template-columns: auto auto 4rem auto 5.5rem auto 4rem auto auto;
+    align-items: center;
+    gap: 0.35rem 0.5rem;
+    font-size: 0.8rem;
+    color: #94a3b8;
+}
+.vk-grid label { white-space: nowrap; }
+.vk-grid input[type=number] {
+    background: #0f172a; border: 1px solid #334155; border-radius: 0.375rem;
+    color: #f1f5f9; padding: 0.3rem 0.5rem; font-size: 0.8rem; text-align: center; width: 100%;
+}
+.vk-grid select {
+    background: #0f172a; border: 1px solid #334155; border-radius: 0.375rem;
+    color: #f1f5f9; padding: 0.3rem 0.5rem; font-size: 0.8rem;
+}
+
+.btn-clear-data { margin-left: auto; }
 
 /* Mode toolbar */
 #noisy-toolbar {
@@ -95,9 +121,11 @@ main { padding: 2rem; display: grid; gap: 1.5rem; }
 
 .charts { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem; }
 @media (max-width: 900px) { .charts { grid-template-columns: 1fr; } }
-.chart-card { background: #1e293b; border: 1px solid #334155; border-radius: 0.75rem; padding: 1rem 1.25rem; }
+.chart-card { background: #1e293b; border: 1px solid #334155; border-radius: 0.75rem; padding: 1rem 1.25rem; min-width: 0; }
 .chart-title { font-size: 0.7rem; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.75rem; }
 .chart-card canvas { height: 180px !important; }
+.chart-card-full { grid-column: 1 / -1; }
+.chart-card-full canvas { height: 220px !important; }
 
 .users { display: grid; grid-template-columns: repeat(10, 1fr); gap: 0.5rem; }
 @media (max-width: 1400px) { .users { grid-template-columns: repeat(8, 1fr); } }

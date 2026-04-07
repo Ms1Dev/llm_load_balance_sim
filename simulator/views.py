@@ -18,6 +18,8 @@ from .models import Config, SimUser, VirtualKeySettings
 REDIS_URL          = os.environ.get('REDIS_URL',          'redis://redis:6379')
 BIFROST_GOVERNANCE = os.environ.get('BIFROST_GOVERNANCE', 'http://bifrost:8080')
 USER_IDS           = list(range(1, 101))
+COST_PER_1K_INPUT  = float(os.environ.get('COST_PER_1K_INPUT',  '0.00015'))
+COST_PER_1K_OUTPUT = float(os.environ.get('COST_PER_1K_OUTPUT', '0.00060'))
 
 ALLOWED_STRATEGIES = {"backoff", "throttle"}
 
@@ -50,11 +52,14 @@ def dashboard(request):
         "running":           runner.is_running(),
         "rpm_limit":         config.rpm_limit,
         "tpm_limit":         config.tpm_limit,
+        "normal_user_rpm":   config.normal_user_rpm,
         "bursty_user_ids":   bursty_user_ids,
         "spammer_user_ids":  spammer_user_ids,
         "pro_user_ids":      pro_user_ids,
-        "has_vkeys":         has_vkeys,
-        "active_strategies_json": json.dumps(active_strategies)
+        "has_vkeys":            has_vkeys,
+        "active_strategies_json": json.dumps(active_strategies),
+        "cost_per_1k_input":   COST_PER_1K_INPUT,
+        "cost_per_1k_output":  COST_PER_1K_OUTPUT,
     })
 
 
@@ -69,8 +74,10 @@ def update_config(request):
         config.rpm_limit = max(1, int(data['rpm_limit']))
     if 'tpm_limit' in data:
         config.tpm_limit = max(1, int(data['tpm_limit']))
+    if 'normal_user_rpm' in data:
+        config.normal_user_rpm = max(1, int(data['normal_user_rpm']))
     config.save()
-    return JsonResponse({'rpm_limit': config.rpm_limit, 'tpm_limit': config.tpm_limit})
+    return JsonResponse({'rpm_limit': config.rpm_limit, 'tpm_limit': config.tpm_limit, 'normal_user_rpm': config.normal_user_rpm})
 
 
 @csrf_exempt
@@ -179,6 +186,25 @@ def set_tier(request):
     SimUser.sync_all_to_redis(r)
     _broadcast_user_modes(r)
     r.close()
+
+    # If virtual keys are active, update the affected users' keys to their new tier's limits
+    affected = list(SimUser.objects.filter(id__in=user_ids).exclude(vkey_id=''))
+    if affected:
+        vks = VirtualKeySettings.get()
+        if tier == SimUser.TIER_PRO:
+            rpm    = max(1,    int(data.get('pro_rpm',    vks.pro_rpm_per_user)))
+            tpm    = max(1,    int(data.get('pro_tpm',    vks.pro_tpm_per_user)))
+            budget = max(0.01, float(data.get('pro_budget', vks.pro_budget_limit)))
+            reset  = data.get('pro_reset', vks.pro_budget_reset)
+        else:
+            rpm    = max(1,    int(data.get('basic_rpm',    vks.rpm_per_user)))
+            tpm    = max(1,    int(data.get('basic_tpm',    vks.tpm_per_user)))
+            budget = max(0.01, float(data.get('basic_budget', vks.budget_limit)))
+            reset  = data.get('basic_reset', vks.budget_reset)
+        with ThreadPoolExecutor(max_workers=20) as ex:
+            futures = [ex.submit(_bifrost_update_key, u.vkey_id, rpm, tpm, budget, reset) for u in affected]
+            [f.result() for f in as_completed(futures)]
+
     return JsonResponse({'ok': True})
 
 
@@ -217,20 +243,28 @@ def _bifrost_create_key(uid: int, rpm: int, tpm: int, budget: float, budget_rese
 @csrf_exempt
 @require_POST
 def assign_virtual_keys(request):
-    data          = json.loads(request.body)
-    rpm_per_user  = max(1, int(data.get('rpm_per_user', 50)))
-    tpm_per_user  = max(1, int(data.get('tpm_per_user', 50_000)))
-    budget_limit  = max(0.01, float(data.get('budget_limit', 1.0)))
-    budget_reset  = data.get('budget_reset', '24h')
+    data = json.loads(request.body)
+    basic_rpm    = max(1,    int(data.get('basic_rpm',    50)))
+    basic_tpm    = max(1,    int(data.get('basic_tpm',    50_000)))
+    basic_budget = max(0.01, float(data.get('basic_budget', 1.0)))
+    basic_reset  = data.get('basic_reset', '24h')
+    pro_rpm      = max(1,    int(data.get('pro_rpm',      100)))
+    pro_tpm      = max(1,    int(data.get('pro_tpm',      100_000)))
+    pro_budget   = max(0.01, float(data.get('pro_budget',   5.0)))
+    pro_reset    = data.get('pro_reset', '24h')
+
+    users = list(SimUser.objects.all())
+    pro_ids = {u.id for u in users if u.tier == SimUser.TIER_PRO}
+
+    def _params(uid):
+        return (pro_rpm, pro_tpm, pro_budget, pro_reset) if uid in pro_ids else (basic_rpm, basic_tpm, basic_budget, basic_reset)
 
     with ThreadPoolExecutor(max_workers=20) as ex:
-        futures = [ex.submit(_bifrost_create_key, uid, rpm_per_user, tpm_per_user, budget_limit, budget_reset)
-                   for uid in USER_IDS]
+        futures = [ex.submit(_bifrost_create_key, u.id, *_params(u.id)) for u in users]
         results = [f.result() for f in as_completed(futures)]
 
-    # Persist to DB
     created, failed = 0, []
-    uid_to_user = {u.id: u for u in SimUser.objects.all()}
+    uid_to_user = {u.id: u for u in users}
     to_update = []
     for uid, value, key_id in results:
         if value:
@@ -244,15 +278,17 @@ def assign_virtual_keys(request):
     if to_update:
         SimUser.objects.bulk_update(to_update, ['vkey_value', 'vkey_id'])
 
-    # Save global key settings
     vks = VirtualKeySettings.get()
-    vks.rpm_per_user = rpm_per_user
-    vks.tpm_per_user = tpm_per_user
-    vks.budget_limit = budget_limit
-    vks.budget_reset = budget_reset
+    vks.rpm_per_user    = basic_rpm
+    vks.tpm_per_user    = basic_tpm
+    vks.budget_limit    = basic_budget
+    vks.budget_reset    = basic_reset
+    vks.pro_rpm_per_user = pro_rpm
+    vks.pro_tpm_per_user = pro_tpm
+    vks.pro_budget_limit = pro_budget
+    vks.pro_budget_reset = pro_reset
     vks.save()
 
-    # Sync Redis (bulk_update doesn't call save())
     r = redis_sync.from_url(REDIS_URL)
     SimUser.sync_all_to_redis(r)
     r.close()
@@ -290,28 +326,38 @@ def _bifrost_update_key(key_id: str, rpm: int, tpm: int, budget: float, budget_r
 @csrf_exempt
 @require_POST
 def update_virtual_keys(request):
-    data          = json.loads(request.body)
-    rpm_per_user  = max(1, int(data.get('rpm_per_user', 50)))
-    tpm_per_user  = max(1, int(data.get('tpm_per_user', 50_000)))
-    budget_limit  = max(0.01, float(data.get('budget_limit', 1.0)))
-    budget_reset  = data.get('budget_reset', '24h')
+    data = json.loads(request.body)
+    basic_rpm    = max(1,    int(data.get('basic_rpm',    50)))
+    basic_tpm    = max(1,    int(data.get('basic_tpm',    50_000)))
+    basic_budget = max(0.01, float(data.get('basic_budget', 1.0)))
+    basic_reset  = data.get('basic_reset', '24h')
+    pro_rpm      = max(1,    int(data.get('pro_rpm',      100)))
+    pro_tpm      = max(1,    int(data.get('pro_tpm',      100_000)))
+    pro_budget   = max(0.01, float(data.get('pro_budget',   5.0)))
+    pro_reset    = data.get('pro_reset', '24h')
 
-    # Read key IDs from DB
-    tasks = [(u.vkey_id, u.id) for u in SimUser.objects.exclude(vkey_id='')]
-    if not tasks:
+    users = list(SimUser.objects.exclude(vkey_id=''))
+    if not users:
         return JsonResponse({'updated': 0, 'failed': [], 'error': 'no keys assigned'}, status=400)
 
+    pro_ids = {u.id for u in users if u.tier == SimUser.TIER_PRO}
+
+    def _params(u):
+        return (pro_rpm, pro_tpm, pro_budget, pro_reset) if u.id in pro_ids else (basic_rpm, basic_tpm, basic_budget, basic_reset)
+
     with ThreadPoolExecutor(max_workers=20) as ex:
-        futures = [ex.submit(_bifrost_update_key, key_id, rpm_per_user, tpm_per_user, budget_limit, budget_reset)
-                   for key_id, _ in tasks]
+        futures = [ex.submit(_bifrost_update_key, u.vkey_id, *_params(u)) for u in users]
         results = [f.result() for f in as_completed(futures)]
 
-    # Persist updated settings
     vks = VirtualKeySettings.get()
-    vks.rpm_per_user = rpm_per_user
-    vks.tpm_per_user = tpm_per_user
-    vks.budget_limit = budget_limit
-    vks.budget_reset = budget_reset
+    vks.rpm_per_user     = basic_rpm
+    vks.tpm_per_user     = basic_tpm
+    vks.budget_limit     = basic_budget
+    vks.budget_reset     = basic_reset
+    vks.pro_rpm_per_user = pro_rpm
+    vks.pro_tpm_per_user = pro_tpm
+    vks.pro_budget_limit = pro_budget
+    vks.pro_budget_reset = pro_reset
     vks.save()
 
     updated = sum(1 for _, ok in results if ok)

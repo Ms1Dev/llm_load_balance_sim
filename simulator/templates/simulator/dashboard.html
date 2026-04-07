@@ -15,67 +15,6 @@
         <button id="play-btn" class="hdr-btn" onclick="toggle()">&#9654; Play</button>
     </header>
 
-    <div id="controls-bar">
-        <form onsubmit="return false">
-            <div class="form-group">
-                <span class="group-label">Scale</span>
-                <div class="form-row">
-                    <label for="tier-select">Tier</label>
-                    <select id="tier-select"></select>
-                    <button onclick="saveConfig()">Apply</button>
-                    <button onclick="clearStats()">Clear data</button>
-                </div>
-            </div>
-            <div class="form-group-sep"></div>
-            <div class="form-group">
-                <span class="group-label">Strategy</span>
-                <div class="form-row">
-                    <button id="strat-backoff" class="strat-btn" onclick="toggleStrategy('backoff')">Backoff</button>
-                    <span id="strategies-label" class="strategies-label"></span>
-                </div>
-            </div>
-            <div class="form-group-sep"></div>
-            <div class="form-group">
-                <span class="group-label">Virtual Keys</span>
-                <div class="form-row">
-                    <label for="vk-rpm">RPM/user</label>
-                    <input type="number" id="vk-rpm" value="50" min="1" max="10000" style="width:4rem">
-                    <label for="vk-tpm">TPM/user</label>
-                    <input type="number" id="vk-tpm" value="50000" min="1000" max="1000000" style="width:5.5rem">
-                    <label for="vk-budget">Budget $</label>
-                    <input type="number" id="vk-budget" value="1.00" min="0.01" step="0.01" style="width:4.5rem">
-                    <label for="vk-budget-reset">Reset</label>
-                    <select id="vk-budget-reset">
-                        <option value="1h">1 h</option>
-                        <option value="2h">2 h</option>
-                        <option value="6h">6 h</option>
-                        <option value="24h" selected>24 h</option>
-                        <option value="1d">1 d</option>
-                        <option value="1M">1 month</option>
-                    </select>
-                    <button id="btn-assign-keys" onclick="assignVirtualKeys()">Assign</button>
-                    <button onclick="clearVirtualKeys()">Clear</button>
-                    <span id="vk-status" class="vk-status {% if has_vkeys %}vk-active{% endif %}">
-                        {% if has_vkeys %}keys active{% else %}not assigned{% endif %}
-                    </span>
-                </div>
-            </div>
-        </form>
-    </div>
-
-    <div id="noisy-toolbar">
-        <span id="toolbar-label">Click tiles to select users</span>
-        <span class="toolbar-sep" id="toolbar-sep-behaviour" style="display:none">Behaviour:</span>
-        <button id="btn-make-normal"  onclick="applyMode('normal')"   style="display:none">Normal</button>
-        <button id="btn-make-bursty"  onclick="applyMode('bursty')"   style="display:none">Bursty</button>
-        <button id="btn-make-spammer" onclick="applyMode('spammer')"  style="display:none">Spammer</button>
-        <span class="toolbar-sep" id="toolbar-sep-tier" style="display:none">Tier:</span>
-        <button id="btn-make-basic"   onclick="applyTier('basic')"    style="display:none">Basic</button>
-        <button id="btn-make-pro"     onclick="applyTier('pro')"      style="display:none">Pro</button>
-        <button id="btn-reset-modes"  onclick="resetAllModes()">Reset all</button>
-        <button id="btn-clear-sel"    onclick="clearSelection()"      style="display:none">Clear selection</button>
-    </div>
-
     <main>
         <div class="charts">
             <div class="chart-card">
@@ -89,6 +28,11 @@
             <div class="chart-card">
                 <div class="chart-title">Avg Latency by User Type</div>
                 <canvas id="latency-chart"></canvas>
+            </div>
+
+            <div class="chart-card">
+                <div class="chart-title">Spend per User ($)</div>
+                <canvas id="spend-chart"></canvas>
             </div>
 
             <div class="chart-card">
@@ -168,7 +112,96 @@
                     </table>
                   </div>
                 </div>
+
+
+                <div class="chart-card">
+                    <form onsubmit="return false">
+                        <div class="form-group">
+                            <span class="group-label">Scale</span>
+                            <div class="form-row">
+                                <label for="tier-select">Tier</label>
+                                <select onChange="saveConfig()" id="tier-select"></select>
+                            </div>
+                        </div>
+                        <div class="form-group-sep"></div>
+                        <div class="form-group">
+                            <span class="group-label">User Settings</span>
+                            <div class="form-row">
+                                <label for="normal-rpm">Normal RPM</label>
+                                <input type="number" id="normal-rpm" value="{{ normal_user_rpm }}" min="1" max="200" onchange="saveConfig()">
+                            </div>
+                        </div>
+                        <div class="form-group-sep"></div>
+                        <div class="form-group">
+                            <span class="group-label">Virtual Keys</span>
+                            <div class="vk-grid">
+                                <span class="vk-tier-label">Basic</span>
+                                <label for="vk-basic-rpm">RPM/user</label>
+                                <input type="number" id="vk-basic-rpm" value="50" min="1" max="10000">
+                                <label for="vk-basic-tpm">TPM/user</label>
+                                <input type="number" id="vk-basic-tpm" value="50000" min="1000" max="1000000">
+                                <label for="vk-basic-budget">Budget $</label>
+                                <input type="number" id="vk-basic-budget" value="1.00" min="0.01" step="0.01">
+                                <label for="vk-basic-reset">Reset</label>
+                                <select id="vk-basic-reset">
+                                    <option value="1h">1 h</option>
+                                    <option value="2h">2 h</option>
+                                    <option value="6h">6 h</option>
+                                    <option value="24h" selected>24 h</option>
+                                    <option value="1d">1 d</option>
+                                    <option value="1M">1 month</option>
+                                </select>
+
+                                <span class="vk-tier-label vk-tier-pro">Pro</span>
+                                <label for="vk-pro-rpm">RPM/user</label>
+                                <input type="number" id="vk-pro-rpm" value="100" min="1" max="10000">
+                                <label for="vk-pro-tpm">TPM/user</label>
+                                <input type="number" id="vk-pro-tpm" value="100000" min="1000" max="1000000">
+                                <label for="vk-pro-budget">Budget $</label>
+                                <input type="number" id="vk-pro-budget" value="5.00" min="0.01" step="0.01">
+                                <label for="vk-pro-reset">Reset</label>
+                                <select id="vk-pro-reset">
+                                    <option value="1h">1 h</option>
+                                    <option value="2h">2 h</option>
+                                    <option value="6h">6 h</option>
+                                    <option value="24h" selected>24 h</option>
+                                    <option value="1d">1 d</option>
+                                    <option value="1M">1 month</option>
+                                </select>
+                            </div>
+                            <div class="form-row" style="margin-top:0.4rem">
+                                <button id="btn-assign-keys" onclick="assignVirtualKeys()">Assign</button>
+                                <button id="btn-revoke-keys" onclick="clearVirtualKeys()">Revoke</button>
+                                <span id="vk-status" class="vk-status {% if has_vkeys %}vk-active{% endif %}">
+                                    {% if has_vkeys %}keys active{% else %}not assigned{% endif %}
+                                </span>
+                            </div>
+                        </div>
+                        <div class="form-group-sep"></div>
+                        <div class="form-group">
+                            <span class="group-label">429 Backoff</span>
+                            <div class="form-row">
+                                <button id="strat-backoff" class="strat-btn" onclick="toggleStrategy('backoff')">Backoff</button>
+                                <span id="strategies-label" class="strategies-label"></span>
+                                <button onclick="confirmClearStats()" class="btn-clear-data">Clear data</button>
+                            </div>
+                        </div>
+                    </form>
+                </div>
             </div>
+        </div>
+
+        <div id="noisy-toolbar">
+            <span id="toolbar-label">Click tiles to select users</span>
+            <span class="toolbar-sep" id="toolbar-sep-behaviour" style="display:none">Behaviour:</span>
+            <button id="btn-make-normal"  onclick="applyMode('normal')"   style="display:none">Normal</button>
+            <button id="btn-make-bursty"  onclick="applyMode('bursty')"   style="display:none">Bursty</button>
+            <button id="btn-make-spammer" onclick="applyMode('spammer')"  style="display:none">Spammer</button>
+            <span class="toolbar-sep" id="toolbar-sep-tier" style="display:none">Tier:</span>
+            <button id="btn-make-basic"   onclick="applyTier('basic')"    style="display:none">Basic</button>
+            <button id="btn-make-pro"     onclick="applyTier('pro')"      style="display:none">Pro</button>
+            <button id="btn-reset-modes"  onclick="resetAllModes()">Reset all</button>
+            <button id="btn-clear-sel"    onclick="clearSelection()"      style="display:none">Clear selection</button>
         </div>
 
         <div class="users" id="users-grid"></div>
@@ -185,6 +218,13 @@
         ];
 
         const USER_IDS = Array.from({length: 50}, (_, i) => i + 1);
+
+        const COST_PER_1K_INPUT  = {{ cost_per_1k_input }};
+        const COST_PER_1K_OUTPUT = {{ cost_per_1k_output }};
+
+        const userSpend = {};
+        USER_IDS.forEach(id => { userSpend[id] = 0; });
+        let spendSessionStart = Date.now();
 
         // Per-user sliding window: {ts, latency_ms} — always last 60s so count === observed RPM
         const userWindow = {};
@@ -307,6 +347,10 @@
                         <span class="metric-label">Avg latency</span>
                         <span class="metric-value" id="lat-${id}">—</span>
                     </div>
+                    <div class="metric">
+                        <span class="metric-label">Spend</span>
+                        <span class="metric-value" id="spend-${id}">$0.0000</span>
+                    </div>
                 </div>
             `;
             grid.appendChild(div);
@@ -364,10 +408,21 @@
         }
 
         async function applyTier(tier) {
+            const payload = { user_ids: [...selectedIds], tier };
+            if (vkeysActive) {
+                payload.basic_rpm    = parseInt(document.getElementById('vk-basic-rpm').value, 10);
+                payload.basic_tpm    = parseInt(document.getElementById('vk-basic-tpm').value, 10);
+                payload.basic_budget = parseFloat(document.getElementById('vk-basic-budget').value);
+                payload.basic_reset  = document.getElementById('vk-basic-reset').value;
+                payload.pro_rpm      = parseInt(document.getElementById('vk-pro-rpm').value, 10);
+                payload.pro_tpm      = parseInt(document.getElementById('vk-pro-tpm').value, 10);
+                payload.pro_budget   = parseFloat(document.getElementById('vk-pro-budget').value);
+                payload.pro_reset    = document.getElementById('vk-pro-reset').value;
+            }
             await fetch('/tier/', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ user_ids: [...selectedIds], tier }),
+                body: JSON.stringify(payload),
             });
             clearSelection();
         }
@@ -407,10 +462,11 @@
 
 async function saveConfig() {
             const tier = TIERS[parseInt(document.getElementById('tier-select').value, 10)];
+            const normalRpm = Math.max(1, parseInt(document.getElementById('normal-rpm').value, 10) || 6);
             await fetch('/config/', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ rpm_limit: tier.rpm, tpm_limit: tier.tpm }),
+                body: JSON.stringify({ rpm_limit: tier.rpm, tpm_limit: tier.tpm, normal_user_rpm: normalRpm }),
             });
             currentRpmLimit = tier.rpm;
             currentTpmLimit = tier.tpm;
@@ -439,6 +495,19 @@ async function saveConfig() {
                 latencyChart.data.datasets[i].data = [];
             });
             latencyChart.update('none');
+            USER_IDS.forEach(id => {
+                userSpend[id] = 0;
+                const el = document.getElementById(`spend-${id}`);
+                if (el) el.textContent = '$0.0000';
+                spendChart.data.datasets[id - 1].data = [];
+            });
+            spendSessionStart = Date.now();
+            spendChart.update('none');
+        }
+
+        async function confirmClearStats() {
+            if (!confirm('Clear all simulator stats and chart data?')) return;
+            await clearStats();
         }
 
         // ── Charts ────────────────────────────────────────────────────────────
@@ -588,6 +657,74 @@ async function saveConfig() {
 
         const latencyChart = buildLatencyChart('latency-chart');
 
+        // ── Spend chart ───────────────────────────────────────────────────────
+        function userColor(id) {
+            if (spammerIds.has(id)) return 'rgba(248,113,113,0.85)';
+            if (burstyIds.has(id))  return 'rgba(251,146,60,0.85)';
+            if (proIds.has(id))     return 'rgba(196,181,253,0.7)';
+            return 'rgba(100,116,139,0.5)';
+        }
+
+        function buildSpendChart(canvasId) {
+            const ctx = document.getElementById(canvasId).getContext('2d');
+            return new Chart(ctx, {
+                type: 'line',
+                data: {
+                    datasets: USER_IDS.map(id => ({
+                        label: `U${id}`,
+                        data: [],
+                        borderColor: userColor(id),
+                        backgroundColor: 'transparent',
+                        fill: false,
+                        tension: 0.2,
+                        pointRadius: 0,
+                        borderWidth: 1.5,
+                        spanGaps: true,
+                    })),
+                },
+                options: {
+                    animation: false,
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        x: {
+                            type: 'linear',
+                            ticks: {
+                                maxTicksLimit: 8,
+                                color: '#64748b',
+                                callback: val => {
+                                    const s = Math.round((val - spendSessionStart) / 1000);
+                                    if (s < 60) return s + 's';
+                                    return Math.floor(s / 60) + 'm' + (s % 60 > 0 ? (s % 60) + 's' : '');
+                                },
+                            },
+                            grid: { color: '#1e293b' },
+                        },
+                        y: {
+                            beginAtZero: true,
+                            ticks: { color: '#64748b', callback: v => '$' + v.toFixed(4) },
+                            grid: { color: '#334155' },
+                        },
+                    },
+                },
+            });
+        }
+
+        const spendChart = buildSpendChart('spend-chart');
+
+        setInterval(() => {
+            const now = Date.now();
+            USER_IDS.forEach((id, i) => {
+                spendChart.data.datasets[i].data.push({ x: now, y: userSpend[id] });
+                spendChart.data.datasets[i].borderColor = userColor(id);
+            });
+            spendChart.options.scales.x.min = spendSessionStart;
+            spendChart.options.scales.x.max = now;
+            spendChart.update('none');
+        }, 2000);
+        // ── End Spend chart ───────────────────────────────────────────────────
+
         function sampleRateLimits() {
             const now = Date.now();
             const chartCutoff = now - CHART_WINDOW_MS;
@@ -679,6 +816,14 @@ async function saveConfig() {
             if (d.rpm_remaining >= 0) latestRpmRemaining = d.rpm_remaining;
             if (d.tpm_remaining >= 0) latestTpmRemaining = d.tpm_remaining;
 
+            // Accumulate spend (only on success, matching backend behaviour)
+            if (d.success) {
+                const cost = (d.input_tokens / 1000 * COST_PER_1K_INPUT) + (d.output_tokens / 1000 * COST_PER_1K_OUTPUT);
+                userSpend[d.user_id] = (userSpend[d.user_id] || 0) + cost;
+                const spendEl = document.getElementById(`spend-${d.user_id}`);
+                if (spendEl) spendEl.textContent = '$' + userSpend[d.user_id].toFixed(4);
+            }
+
             // Feed sliding window — includes error type for breakdown stats
             userWindow[d.user_id].push({ ts: Date.now(), latency_ms: d.latency_ms, success: d.success, error: d.error, status_code: d.status_code });
             renderUserMetrics(d.user_id);
@@ -734,18 +879,24 @@ async function saveConfig() {
 
         function _setVkState(active) {
             vkeysActive = active;
-            const btn = document.getElementById('btn-assign-keys');
-            btn.textContent = active ? 'Update' : 'Assign';
+            document.getElementById('btn-assign-keys').textContent = active ? 'Update' : 'Assign';
+            document.getElementById('btn-revoke-keys').style.display = active ? '' : 'none';
         }
 
         async function assignVirtualKeys() {
             const btn = document.getElementById('btn-assign-keys');
             const statusEl = document.getElementById('vk-status');
             btn.disabled = true;
-            const rpm    = parseInt(document.getElementById('vk-rpm').value, 10);
-            const tpm    = parseInt(document.getElementById('vk-tpm').value, 10);
-            const budget = parseFloat(document.getElementById('vk-budget').value);
-            const reset  = document.getElementById('vk-budget-reset').value;
+            const payload = {
+                basic_rpm:    parseInt(document.getElementById('vk-basic-rpm').value, 10),
+                basic_tpm:    parseInt(document.getElementById('vk-basic-tpm').value, 10),
+                basic_budget: parseFloat(document.getElementById('vk-basic-budget').value),
+                basic_reset:  document.getElementById('vk-basic-reset').value,
+                pro_rpm:      parseInt(document.getElementById('vk-pro-rpm').value, 10),
+                pro_tpm:      parseInt(document.getElementById('vk-pro-tpm').value, 10),
+                pro_budget:   parseFloat(document.getElementById('vk-pro-budget').value),
+                pro_reset:    document.getElementById('vk-pro-reset').value,
+            };
             const url = vkeysActive ? '/virtual-keys/update/' : '/virtual-keys/';
             statusEl.textContent = vkeysActive ? 'updating…' : 'creating…';
             statusEl.className = 'vk-status';
@@ -753,7 +904,7 @@ async function saveConfig() {
                 const resp = await fetch(url, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ rpm_per_user: rpm, tpm_per_user: tpm, budget_limit: budget, budget_reset: reset }),
+                    body: JSON.stringify(payload),
                 });
                 const data = await resp.json();
                 const count  = data.created ?? data.updated;

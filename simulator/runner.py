@@ -27,7 +27,7 @@ REDIS_URL = os.environ.get("REDIS_URL", "redis://redis:6379")
 
 USER_IDS = list(range(1, 51))
 
-BASELINE_RPM = 6
+DEFAULT_BASELINE_RPM = 6
 SPAMMER_RPM  = 200
 BURSTY_RPM   = 120
 VARIABILITY  = 5
@@ -126,6 +126,11 @@ async def _get_user_api_key(redis_client, user_id: int) -> str:
     return key.decode() if key else API_KEY
 
 
+async def _get_baseline_rpm(redis_client) -> float:
+    val = await redis_client.get('config:normal_user_rpm')
+    return float(val) if val else DEFAULT_BASELINE_RPM
+
+
 async def _get_user_mode(redis_client, user_id: int) -> str:
     """Return 'spammer', 'bursty', or 'normal'."""
     pipe = redis_client.pipeline(transaction=False)
@@ -186,7 +191,8 @@ async def _user_loop(session: aiohttp.ClientSession, user_id: int, redis_client)
         elif mode == 'bursty':
             rpm = BURSTY_RPM
         else:
-            rpm = _bell(max(1, BASELINE_RPM - VARIABILITY), BASELINE_RPM + VARIABILITY) * get_usage_multiplier(USAGE_MULTIPLIER)
+            baseline = await _get_baseline_rpm(redis_client)
+            rpm = _bell(max(1, baseline - VARIABILITY), baseline + VARIABILITY) * get_usage_multiplier(USAGE_MULTIPLIER)
         prompt = generate_prompt(1)[0]
         input_tokens = _count_tokens(prompt)  # pre-count so 429s still show real token usage
         t0 = time.monotonic()
