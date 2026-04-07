@@ -11,47 +11,57 @@
 <body>
     <header>
         <h1>LLM Load Balancer Simulator</h1>
-        <div class="scale-control">
-            <label for="tier-select">Tier</label>
-            <select id="tier-select"></select>
-        </div>
-        <div class="scale-control">
-            <button onclick="saveConfig()">Apply</button>
-        </div>
-        <div class="scale-control">
-            <button onclick="clearStats()">Clear data</button>
-        </div>
-        <div class="scale-control">
-            <label>Strategies</label>
-            <button id="strat-backoff" class="strat-btn" onclick="toggleStrategy('backoff')">Backoff</button>
-            <span id="strategies-label" class="strategies-label"></span>
-        </div>
-        <div class="scale-control">
-            <label>Virtual Keys</label>
-            <label>RPM/user</label>
-            <input type="number" id="vk-rpm" value="50" min="1" max="10000" style="width:4rem">
-            <label>TPM/user</label>
-            <input type="number" id="vk-tpm" value="50000" min="1000" max="1000000" style="width:5.5rem">
-            <label>Budget $</label>
-            <input type="number" id="vk-budget" value="1.00" min="0.01" step="0.01" style="width:4.5rem">
-            <label>Reset</label>
-            <select id="vk-budget-reset">
-                <option value="1h">1 h</option>
-                <option value="2h">2 h</option>
-                <option value="6h">6 h</option>
-                <option value="24h" selected>24 h</option>
-                <option value="1d">1 d</option>
-                <option value="1M">1 month</option>
-            </select>
-            <button id="btn-assign-keys" onclick="assignVirtualKeys()">Assign</button>
-            <button onclick="clearVirtualKeys()">Clear</button>
-            <span id="vk-status" class="vk-status {% if has_vkeys %}vk-active{% endif %}">
-                {% if has_vkeys %}keys active{% else %}not assigned{% endif %}
-            </span>
-        </div>
         <div class="status-dot" id="status-dot"></div>
         <button id="play-btn" class="hdr-btn" onclick="toggle()">&#9654; Play</button>
     </header>
+
+    <div id="controls-bar">
+        <form onsubmit="return false">
+            <div class="form-group">
+                <span class="group-label">Scale</span>
+                <div class="form-row">
+                    <label for="tier-select">Tier</label>
+                    <select id="tier-select"></select>
+                    <button onclick="saveConfig()">Apply</button>
+                    <button onclick="clearStats()">Clear data</button>
+                </div>
+            </div>
+            <div class="form-group-sep"></div>
+            <div class="form-group">
+                <span class="group-label">Strategy</span>
+                <div class="form-row">
+                    <button id="strat-backoff" class="strat-btn" onclick="toggleStrategy('backoff')">Backoff</button>
+                    <span id="strategies-label" class="strategies-label"></span>
+                </div>
+            </div>
+            <div class="form-group-sep"></div>
+            <div class="form-group">
+                <span class="group-label">Virtual Keys</span>
+                <div class="form-row">
+                    <label for="vk-rpm">RPM/user</label>
+                    <input type="number" id="vk-rpm" value="50" min="1" max="10000" style="width:4rem">
+                    <label for="vk-tpm">TPM/user</label>
+                    <input type="number" id="vk-tpm" value="50000" min="1000" max="1000000" style="width:5.5rem">
+                    <label for="vk-budget">Budget $</label>
+                    <input type="number" id="vk-budget" value="1.00" min="0.01" step="0.01" style="width:4.5rem">
+                    <label for="vk-budget-reset">Reset</label>
+                    <select id="vk-budget-reset">
+                        <option value="1h">1 h</option>
+                        <option value="2h">2 h</option>
+                        <option value="6h">6 h</option>
+                        <option value="24h" selected>24 h</option>
+                        <option value="1d">1 d</option>
+                        <option value="1M">1 month</option>
+                    </select>
+                    <button id="btn-assign-keys" onclick="assignVirtualKeys()">Assign</button>
+                    <button onclick="clearVirtualKeys()">Clear</button>
+                    <span id="vk-status" class="vk-status {% if has_vkeys %}vk-active{% endif %}">
+                        {% if has_vkeys %}keys active{% else %}not assigned{% endif %}
+                    </span>
+                </div>
+            </div>
+        </form>
+    </div>
 
     <div id="noisy-toolbar">
         <span id="toolbar-label">Click tiles to select users</span>
@@ -76,112 +86,88 @@
                 <div class="chart-title">Tokens / Minute</div>
                 <canvas id="tpm-chart"></canvas>
             </div>
-            <div class="chart-card" style="grid-column: span 2">
+            <div class="chart-card">
                 <div class="chart-title">Avg Latency by User Type</div>
-                <canvas id="latency-chart" style="height: 200px !important"></canvas>
+                <canvas id="latency-chart"></canvas>
             </div>
-        </div>
 
-        <div class="stats">
-            <div class="stat-card">
-                <div class="title">Basic Users <span id="basic-user-count">0</span></div>
-                <div class="flex-container row" style="display: flex; gap: 1.5rem;">
-                    <div class="flex-item" style="flex: 1;">
-                        <div class="title">Normal <span id="basic-normal-user-count">0</span></div>
-                        <div class="statistic">
-                            <div class="label">Total Requests per minute</div>
-                            <div class="value" id="basic-normal-stat-total">0</div>
-                        </div>
-                        <div class="statistic">
-                            <div class="label">Avg Latency per request</div>
-                            <div class="value" id="basic-normal-stat-latency">—</div>
-                        </div>
-                        <div class="statistic">
-                            <div class="label">Error Rate per minute</div>
-                            <div class="value" id="basic-normal-stat-error-rate">—</div>
-                        </div>
-                    </div>
-                    <div class="flex-item" style="flex: 1;">
-                        <div class="title">Bursty <span id="basic-bursty-user-count">0</span></div>
-                        <div class="statistic">
-                            <div class="label">Total Requests per minute</div>
-                            <div class="value" id="basic-bursty-stat-total">0</div>
-                        </div>
-                        <div class="statistic">
-                            <div class="label">Avg Latency per request</div>
-                            <div class="value" id="basic-bursty-stat-latency">—</div>
-                        </div>
-                        <div class="statistic">
-                            <div class="label">Error Rate per minute</div>
-                            <div class="value" id="basic-bursty-stat-error-rate">—</div>
-                        </div>
-                    </div>
-                    <div class="flex-item" style="flex: 1;">
-                        <div class="title">Spammer <span id="basic-spammer-user-count">0</span></div>
-                        <div class="statistic">
-                            <div class="label">Total Requests per minute</div>
-                            <div class="value" id="basic-spammer-stat-total">0</div>
-                        </div>
-                        <div class="statistic">
-                            <div class="label">Avg Latency per request</div>
-                            <div class="value" id="basic-spammer-stat-latency">—</div>
-                        </div>
-                        <div class="statistic">
-                            <div class="label">Error Rate per minute</div>
-                            <div class="value" id="basic-spammer-stat-error-rate">—</div>
-                        </div>
-                    </div>
+            <div class="chart-card">
+                <div class="stats">
+                    <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+                      <thead>
+                        <tr>
+                          <th style="text-align: left; padding: 8px 12px; font-weight: 500;">Tier / Type</th>
+                          <th style="text-align: left; padding: 8px 12px; font-weight: 500;">Users</th>
+                          <th style="text-align: left; padding: 8px 12px; font-weight: 500;">Req / Min</th>
+                          <th style="text-align: left; padding: 8px 12px; font-weight: 500;">Avg Latency</th>
+                          <th style="text-align: left; padding: 8px 12px; font-weight: 500;">Error Rate / Min</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr class="tier-header">
+                          <td style="padding: 6px 12px; font-weight: 500;">
+                            Basic Users
+                          </td>
+                          <td style="padding: 8px 12px;"><span id="basic-normal-user-count">0</span></td>
+                          <td style="padding: 8px 12px;"><span id="basic-normal-stat-total">0</span></td>
+                          <td style="padding: 8px 12px;"><span id="basic-normal-stat-latency">—</span></td>
+                          <td style="padding: 8px 12px;"><span id="basic-normal-stat-error-rate">—</span></td>
+                        </tr>
+                        <tr>
+                          <td style="padding: 8px 12px;">Normal</td>
+                          <td style="padding: 8px 12px;"><span id="basic-normal-user-count">0</span></td>
+                          <td style="padding: 8px 12px;"><span id="basic-normal-stat-total">0</span></td>
+                          <td style="padding: 8px 12px;"><span id="basic-normal-stat-latency">—</span></td>
+                          <td style="padding: 8px 12px;"><span id="basic-normal-stat-error-rate">—</span></td>
+                        </tr>
+                        <tr>
+                          <td style="padding: 8px 12px;">Bursty</td>
+                          <td style="padding: 8px 12px;"><span id="basic-bursty-user-count">0</span></td>
+                          <td style="padding: 8px 12px;"><span id="basic-bursty-stat-total">0</span></td>
+                          <td style="padding: 8px 12px;"><span id="basic-bursty-stat-latency">—</span></td>
+                          <td style="padding: 8px 12px;"><span id="basic-bursty-stat-error-rate">—</span></td>
+                        </tr>
+                        <tr>
+                          <td style="padding: 8px 12px;">Spammer</td>
+                          <td style="padding: 8px 12px;"><span id="basic-spammer-user-count">0</span></td>
+                          <td style="padding: 8px 12px;"><span id="basic-spammer-stat-total">0</span></td>
+                          <td style="padding: 8px 12px;"><span id="basic-spammer-stat-latency">—</span></td>
+                          <td style="padding: 8px 12px;"><span id="basic-spammer-stat-error-rate">—</span></td>
+                        </tr>
+                        <tr class="tier-header">
+                          <td style="padding: 6px 12px; font-weight: 500;">
+                            Pro Users
+                          </td>
+                          <td style="padding: 8px 12px;"><span id="pro-user-count">0</span></td>
+                          <td style="padding: 8px 12px;"><span id="pro-stat-total">0</span></td>
+                          <td style="padding: 8px 12px;"><span id="pro-stat-latency">—</span></td>
+                          <td style="padding: 8px 12px;"><span id="pro-stat-error-rate">—</span></td>
+                        </tr>
+                        <tr>
+                          <td style="padding: 8px 12px;">Normal</td>
+                          <td style="padding: 8px 12px;"><span id="pro-normal-user-count">0</span></td>
+                          <td style="padding: 8px 12px;"><span id="pro-normal-stat-total">0</span></td>
+                          <td style="padding: 8px 12px;"><span id="pro-normal-stat-latency">—</span></td>
+                          <td style="padding: 8px 12px;"><span id="pro-normal-stat-error-rate">—</span></td>
+                        </tr>
+                        <tr>
+                          <td style="padding: 8px 12px;">Bursty</td>
+                          <td style="padding: 8px 12px;"><span id="pro-bursty-user-count">0</span></td>
+                          <td style="padding: 8px 12px;"><span id="pro-bursty-stat-total">0</span></td>
+                          <td style="padding: 8px 12px;"><span id="pro-bursty-stat-latency">—</span></td>
+                          <td style="padding: 8px 12px;"><span id="pro-bursty-stat-error-rate">—</span></td>
+                        </tr>
+                        <tr>
+                          <td style="padding: 8px 12px;">Spammer</td>
+                          <td style="padding: 8px 12px;"><span id="pro-spammer-user-count">0</span></td>
+                          <td style="padding: 8px 12px;"><span id="pro-spammer-stat-total">0</span></td>
+                          <td style="padding: 8px 12px;"><span id="pro-spammer-stat-latency">—</span></td>
+                          <td style="padding: 8px 12px;"><span id="pro-spammer-stat-error-rate">—</span></td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
-            </div>
-            <div class="stat-card">
-                <div class="title">Pro Users <span id="pro-user-count">0</span></div>
-                <div class="flex-container row" style="display: flex; gap: 1.5rem;">
-                    <div class="flex-item" style="flex: 1;">
-                        <div class="title">Normal <span id="pro-normal-user-count">0</span></div>
-                        <div class="statistic">
-                            <div class="label">Total Requests per minute</div>
-                            <div class="value" id="pro-normal-stat-total">0</div>
-                        </div>
-                        <div class="statistic">
-                            <div class="label">Avg Latency per request</div>
-                            <div class="value" id="pro-normal-stat-latency">—</div>
-                        </div>
-                        <div class="statistic">
-                            <div class="label">Error Rate per minute</div>
-                            <div class="value" id="pro-normal-stat-error-rate">—</div>
-                        </div>
-                    </div>
-                    <div class="flex-item" style="flex: 1;">
-                        <div class="title">Bursty <span id="pro-bursty-user-count">0</span></div>
-                        <div class="statistic">
-                            <div class="label">Total Requests per minute</div>
-                            <div class="value" id="pro-bursty-stat-total">0</div>
-                        </div>
-                        <div class="statistic">
-                            <div class="label">Avg Latency per request</div>
-                            <div class="value" id="pro-bursty-stat-latency">—</div>
-                        </div>
-                        <div class="statistic">
-                            <div class="label">Error Rate per minute</div>
-                            <div class="value" id="pro-bursty-stat-error-rate">—</div>
-                        </div>
-                    </div>
-                    <div class="flex-item" style="flex: 1;">
-                        <div class="title">Spammer <span id="pro-spammer-user-count">0</span></div>
-                        <div class="statistic">
-                            <div class="label">Total Requests per minute</div>
-                            <div class="value" id="pro-spammer-stat-total">0</div>
-                        </div>
-                        <div class="statistic">
-                            <div class="label">Avg Latency per request</div>
-                            <div class="value" id="pro-spammer-stat-latency">—</div>
-                        </div>
-                        <div class="statistic">
-                            <div class="label">Error Rate per minute</div>
-                            <div class="value" id="pro-spammer-stat-error-rate">—</div>
-                        </div>
-                    </div>
-                </div>            
             </div>
         </div>
 
