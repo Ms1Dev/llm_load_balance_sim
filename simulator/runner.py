@@ -184,10 +184,10 @@ async def _user_loop(session: aiohttp.ClientSession, user_id: int, redis_client)
         # ── Bursty phase management ──────────────────────────────────────
         if mode == 'bursty':
             now = time.monotonic()
-            # Entering bursty mode fresh → start in burst immediately
+            # Entering bursty mode fresh → random initial offset so users don't all burst together
             if prev_mode != 'bursty':
-                bursty_bursting  = True
-                bursty_phase_end = now + random.uniform(BURSTY_BURST_MIN, BURSTY_BURST_MAX)
+                bursty_bursting  = False
+                bursty_phase_end = now + random.uniform(0, BURSTY_PAUSE_MAX)
             elif now >= bursty_phase_end:
                 bursty_bursting  = not bursty_bursting
                 duration = (random.uniform(BURSTY_BURST_MIN, BURSTY_BURST_MAX)
