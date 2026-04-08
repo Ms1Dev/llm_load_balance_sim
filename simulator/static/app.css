@@ -62,6 +62,15 @@ header h1 { font-size: 1.25rem; font-weight: 600; flex: 1; }
 .strat-btn.active:hover { background: #38bdf8; }
 
 
+.window-toggle { display: flex; gap: 0.2rem; }
+.win-btn {
+    background: #1e293b; border: 1px solid #334155; border-radius: 0.3rem;
+    color: #64748b; padding: 0.2rem 0.5rem; cursor: pointer; font-size: 0.7rem;
+    transition: background 0.15s, color 0.15s;
+}
+.win-btn:hover { background: #273449; color: #94a3b8; }
+.win-btn.active { background: #0ea5e9; border-color: #0ea5e9; color: #fff; }
+
 .usage-toggle { display: flex;}
 .usage-btn {
     background: #1e293b; border: none; color: #64748b;

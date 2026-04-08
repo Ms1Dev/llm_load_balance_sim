@@ -37,6 +37,14 @@
 
             <div class="chart-card">
                 <div class="stats">
+                    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:0.5rem;">
+                        <span style="font-size:0.75rem; color:#64748b; font-weight:600; text-transform:uppercase; letter-spacing:0.05em;">Stats</span>
+                        <div class="window-toggle">
+                            <button class="win-btn" onclick="setStatsWindow(30000,this)">30s</button>
+                            <button class="win-btn active" onclick="setStatsWindow(60000,this)">1m</button>
+                            <button class="win-btn" onclick="setStatsWindow(300000,this)">5m</button>
+                        </div>
+                    </div>
                     <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
                       <thead>
                         <tr>
@@ -266,6 +274,20 @@
             </div>
         </div>
 
+        <div id="noisy-toolbar">
+            <span id="toolbar-label">Click tiles to select users</span>
+            <span class="toolbar-sep" id="toolbar-sep-behaviour" style="display:none">Behaviour:</span>
+            <button id="btn-make-normal"  onclick="applyMode('normal')"   style="display:none">Normal</button>
+            <button id="btn-make-noisy"   onclick="applyMode('noisy')"    style="display:none">Noisy</button>
+            <button id="btn-make-spammer" onclick="applyMode('spammer')"  style="display:none">Spammer</button>
+            <button id="btn-make-bursty"  onclick="applyMode('bursty')"   style="display:none">Bursty (10s)</button>
+            <span class="toolbar-sep" id="toolbar-sep-tier" style="display:none">Tier:</span>
+            <button id="btn-make-basic"   onclick="applyTier('basic')"    style="display:none">Basic</button>
+            <button id="btn-make-pro"     onclick="applyTier('pro')"      style="display:none">Pro</button>
+            <button id="btn-reset-modes"  onclick="resetAllModes()">Reset all</button>
+            <button id="btn-clear-sel"    onclick="clearSelection()"      style="display:none">Clear selection</button>
+        </div>
+
         <div class="users" id="users-grid"></div>
     </main>
 
@@ -289,19 +311,28 @@
         USER_IDS.forEach(id => { userSpend[id] = _persistedSpend[id] || 0; });
         let spendSessionStart = Date.now();
 
-        // Per-user sliding window: {ts, latency_ms} — always last 60s so count === observed RPM
+        // Per-user sliding window — retained for up to 5m so all toggle windows have data
         const userWindow = {};
         USER_IDS.forEach(id => { userWindow[id] = []; });
-        const USER_TILE_WINDOW_MS = 60 * 1000;
+        const USER_TILE_WINDOW_MS = 5 * 60 * 1000;
+        let statsWindowMs = 60 * 1000;   // active window for the stats table (30s / 1m / 5m)
 
         function pruneWindow(id) {
             const cutoff = Date.now() - USER_TILE_WINDOW_MS;
             userWindow[id] = userWindow[id].filter(r => r.ts >= cutoff);
         }
 
+        function setStatsWindow(ms, btn) {
+            statsWindowMs = ms;
+            document.querySelectorAll('.win-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+        }
+
         function renderUserMetrics(id) {
             pruneWindow(id);
-            const entries = userWindow[id];
+            // Tile RPM is always over the last 60s (it's a per-minute metric by definition)
+            const cutoff60 = Date.now() - 60_000;
+            const entries = userWindow[id].filter(e => e.ts >= cutoff60);
             const latEl = document.getElementById(`lat-${id}`);
             const rpmEl = document.getElementById(`rpm-label-${id}`);
             if (entries.length === 0) {
@@ -341,12 +372,16 @@
                 for (const m of modes) groups[t][m] = { total: 0, errors: 0, latSum: 0, userCount: 0, lats: [] };
             }
 
+            const statsCutoff = Date.now() - statsWindowMs;
+            const statsMinutes = statsWindowMs / 60_000;
+
             USER_IDS.forEach(id => {
                 const tier = proIds.has(id) ? 'pro' : 'basic';
                 const mode = spammerIds.has(id) ? 'spammer' : (burstyIds.has(id) ? 'bursty' : 'normal');
                 const g = groups[tier][mode];
                 g.userCount++;
                 for (const e of userWindow[id]) {
+                    if (e.ts < statsCutoff) continue;
                     g.total++;
                     g.latSum += e.latency_ms;
                     g.lats.push(e.latency_ms);
@@ -355,38 +390,23 @@
             });
 
             for (const t of tiers) {
-                let tierUsers = 0, tierTotal = 0, tierLatSum = 0, tierErrors = 0, tierLats = [];
+                let tierUsers = 0;
                 for (const m of modes) {
                     const g = groups[t][m];
-                    tierUsers  += g.userCount;
-                    tierTotal  += g.total;
-                    tierLatSum += g.latSum;
-                    tierErrors += g.errors;
-                    tierLats    = tierLats.concat(g.lats);
+                    tierUsers += g.userCount;
                     const pfx = `${t}-${m}`;
                     const sorted = g.lats.length > 0 ? [...g.lats].sort((a, b) => a - b) : null;
                     const mean = g.total > 0 ? Math.round(g.latSum / g.total) : null;
                     const p50  = sorted ? sorted[Math.floor(sorted.length * 0.50)] : null;
                     const p95  = sorted ? sorted[Math.floor(sorted.length * 0.95)] : null;
                     document.getElementById(`${pfx}-user-count`).textContent  = g.userCount;
-                    document.getElementById(`${pfx}-stat-total`).textContent  = g.total;
+                    document.getElementById(`${pfx}-stat-total`).textContent  = Math.round(g.total / statsMinutes);
                     document.getElementById(`${pfx}-stat-latency`).textContent =
-                        mean !== null
-                            ? `${mean} / ${p50} / ${p95} ms`
-                            : '—';
+                        mean !== null ? `${mean} / ${p50} / ${p95} ms` : '—';
                     document.getElementById(`${pfx}-stat-error-rate`).textContent =
                         g.total > 0 ? ((g.errors / g.total) * 100).toFixed(1) + '%' : '—';
                 }
-                const tierSorted = tierLats.length > 0 ? [...tierLats].sort((a, b) => a - b) : null;
-                const tierMean = tierTotal > 0 ? Math.round(tierLatSum / tierTotal) : null;
-                const tierP50  = tierSorted ? tierSorted[Math.floor(tierSorted.length * 0.50)] : null;
-                const tierP95  = tierSorted ? tierSorted[Math.floor(tierSorted.length * 0.95)] : null;
                 document.getElementById(`${t}-user-count`).textContent = tierUsers;
-                document.getElementById(`${t}-stat-total`).textContent = tierTotal;
-                document.getElementById(`${t}-stat-latency`).textContent =
-                    tierMean !== null ? `${tierMean} / ${tierP50} / ${tierP95} ms` : '—';
-                document.getElementById(`${t}-stat-error-rate`).textContent =
-                    tierTotal > 0 ? ((tierErrors / tierTotal) * 100).toFixed(1) + '%' : '—';
             }
         }, 1000);
 
