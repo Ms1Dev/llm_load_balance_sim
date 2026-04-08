@@ -219,4 +219,4 @@ async def health():
 
 @app.get("/v1/models")
 async def models():
-    return {"data": [{"id": "gpt-4o-mini"}, {"id": "gpt-4o"}]}
+    return {"data": [{"id": "gpt-5.4-mini"}]}

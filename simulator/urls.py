@@ -18,4 +18,5 @@ urlpatterns = [
     path('virtual-keys/clear/', views.clear_virtual_keys, name='clear_virtual_keys'),
     path('clear/', views.clear_stats, name='clear_stats'),
     path('strategies/', views.set_strategies, name='set_strategies'),
+    path('usage-pattern/', views.set_usage_pattern, name='set_usage_pattern'),
 ]

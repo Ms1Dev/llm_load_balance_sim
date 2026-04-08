@@ -10,7 +10,7 @@
 </head>
 <body>
     <header>
-        <h1>LLM Load Balancer Simulator</h1>
+        <h1>LLM Usage Simulator</h1>
         <div class="status-dot" id="status-dot"></div>
         <button id="play-btn" class="hdr-btn" onclick="toggle()">&#9654; Play</button>
     </header>
@@ -43,7 +43,7 @@
                           <th style="text-align: left; padding: 8px 12px; font-weight: 500;">Tier / Type</th>
                           <th style="text-align: left; padding: 8px 12px; font-weight: 500;">Users</th>
                           <th style="text-align: left; padding: 8px 12px; font-weight: 500;">Req / Min</th>
-                          <th style="text-align: left; padding: 8px 12px; font-weight: 500;">Avg Latency</th>
+                          <th style="text-align: left; padding: 8px 12px; font-weight: 500;">Mean / P50 / P95 Latency</th>
                           <th style="text-align: left; padding: 8px 12px; font-weight: 500;">Error Rate / Min</th>
                         </tr>
                       </thead>
@@ -52,10 +52,10 @@
                           <td style="padding: 6px 12px; font-weight: 500;">
                             Basic Users
                           </td>
-                          <td style="padding: 8px 12px;"><span id="basic-normal-user-count">0</span></td>
-                          <td style="padding: 8px 12px;"><span id="basic-normal-stat-total">0</span></td>
-                          <td style="padding: 8px 12px;"><span id="basic-normal-stat-latency">—</span></td>
-                          <td style="padding: 8px 12px;"><span id="basic-normal-stat-error-rate">—</span></td>
+                          <td style="padding: 8px 12px;"><span id="basic-user-count">0</span></td>
+                          <td style="padding: 8px 12px;"></td>
+                          <td style="padding: 8px 12px;"></td>
+                          <td style="padding: 8px 12px;"></td>
                         </tr>
                         <tr>
                           <td style="padding: 8px 12px;">Normal</td>
@@ -83,9 +83,9 @@
                             Pro Users
                           </td>
                           <td style="padding: 8px 12px;"><span id="pro-user-count">0</span></td>
-                          <td style="padding: 8px 12px;"><span id="pro-stat-total">0</span></td>
-                          <td style="padding: 8px 12px;"><span id="pro-stat-latency">—</span></td>
-                          <td style="padding: 8px 12px;"><span id="pro-stat-error-rate">—</span></td>
+                          <td style="padding: 8px 12px;"></td>
+                          <td style="padding: 8px 12px;"></td>
+                          <td style="padding: 8px 12px;"></td>
                         </tr>
                         <tr>
                           <td style="padding: 8px 12px;">Normal</td>
@@ -115,13 +115,31 @@
 
 
                 <div class="chart-card">
+                    <div class="chart-title">Simulator configuration</div>
                     <form onsubmit="return false">
                         <div class="form-group">
-                            <span class="group-label">Scale</span>
+                            <span class="group-label">OpenAI Usage Tier</span>
                             <div class="form-row">
                                 <label for="tier-select">Tier</label>
                                 <select onChange="saveConfig()" id="tier-select"></select>
-                            </div>
+                                <div class="vertical-spacer">|</div>
+
+                                    <button type="button" id="strat-backoff" class="strat-btn" onclick="toggleStrategy('backoff')">429 Backoff</button>
+                                    <div class="vertical-spacer">|</div>
+                                    <div class="usage-toggle">
+                                        <button type="button" class="usage-btn {% if usage_pattern == 'consistent' %}active{% endif %}" id="usage-consistent" onclick="setUsagePattern('consistent')" title="Consistent">
+                                            <svg width="24" height="16" viewBox="0 0 24 16"><line x1="2" y1="8" x2="22" y2="8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+                                        </button>
+                                        <button type="button" class="usage-btn {% if usage_pattern == 'sine_wave' %}active{% endif %}" id="usage-sine_wave" onclick="setUsagePattern('sine_wave')" title="Sine wave">
+                                            <svg width="24" height="16" viewBox="0 0 24 16"><path d="M2,8 C5,2 7,2 9,8 C11,14 13,14 15,8 C17,2 19,2 22,8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+                                        </button>
+                                        <button type="button" class="usage-btn {% if usage_pattern == 'bursty' %}active{% endif %}" id="usage-bursty" onclick="setUsagePattern('bursty')" title="Bursty">
+                                            <svg width="24" height="16" viewBox="0 0 24 16"><polyline points="2,12 6,12 6,3 10,3 10,12 13,12 13,5 17,5 17,12 22,12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                                        </button>
+                                    </div>
+                                    <div class="vertical-spacer">|</div>
+                                    <button type="button" onclick="confirmClearStats()" class="btn-clear-data">Clear data</button>
+                                </div>
                         </div>
                         <div class="form-group-sep"></div>
                         <div class="form-group">
@@ -132,76 +150,120 @@
                             </div>
                         </div>
                         <div class="form-group-sep"></div>
-                        <div class="form-group">
+                        <div class="form-group ">
                             <span class="group-label">Virtual Keys</span>
-                            <div class="vk-grid">
-                                <span class="vk-tier-label">Basic</span>
-                                <label for="vk-basic-rpm">RPM/user</label>
-                                <input type="number" id="vk-basic-rpm" value="50" min="1" max="10000">
-                                <label for="vk-basic-tpm">TPM/user</label>
-                                <input type="number" id="vk-basic-tpm" value="50000" min="1000" max="1000000">
-                                <label for="vk-basic-budget">Budget $</label>
-                                <input type="number" id="vk-basic-budget" value="1.00" min="0.01" step="0.01">
-                                <label for="vk-basic-reset">Reset</label>
-                                <select id="vk-basic-reset">
-                                    <option value="1h">1 h</option>
-                                    <option value="2h">2 h</option>
-                                    <option value="6h">6 h</option>
-                                    <option value="24h" selected>24 h</option>
-                                    <option value="1d">1 d</option>
-                                    <option value="1M">1 month</option>
-                                </select>
+                            <div class="vk-settings">
+                                <fieldset>
+                                    <legend>Basic</legend>
+                                    <div class="vk-grid">
+                                        <div class="vk-grid-row-pair">
+                                            <div class="vk-grid-row">
+                                                <label for="vk-basic-rpm">Requests</label>
+                                                <input type="number" id="vk-basic-rpm" value="{{ vk_basic_requests }}" min="1" max="10000">
+                                                <label>Reset</label>
+                                                <input type="number" id="vk-basic-request-reset-n" value="{{ vk_basic_requests_reset_n }}" min="1" class="vk-reset-n">
+                                                <select id="vk-basic-request-reset-unit">
+                                                    <option value="m" {% if vk_basic_requests_reset_unit == 'm' %}selected{% endif %}>min</option>
+                                                    <option value="h" {% if vk_basic_requests_reset_unit == 'h' %}selected{% endif %}>hr</option>
+                                                    <option value="d" {% if vk_basic_requests_reset_unit == 'd' %}selected{% endif %}>day</option>
+                                                    <option value="w" {% if vk_basic_requests_reset_unit == 'w' %}selected{% endif %}>week</option>
+                                                    <option value="M" {% if vk_basic_requests_reset_unit == 'M' %}selected{% endif %}>month</option>
+                                                    <option value="Y" {% if vk_basic_requests_reset_unit == 'Y' %}selected{% endif %}>year</option>
+                                                </select>
+                                            </div>
+                                            <div class="vk-grid-row">
+                                                <label for="vk-basic-tpm">Tokens</label>
+                                                <input type="number" id="vk-basic-tpm" value="{{ vk_basic_tokens }}" min="1000" max="1000000">
+                                                <label>Reset</label>
+                                                <input type="number" id="vk-basic-token-reset-n" value="{{ vk_basic_tokens_reset_n }}" min="1" class="vk-reset-n">
+                                                <select id="vk-basic-token-reset-unit">
+                                                    <option value="m" {% if vk_basic_tokens_reset_unit == 'm' %}selected{% endif %}>min</option>
+                                                    <option value="h" {% if vk_basic_tokens_reset_unit == 'h' %}selected{% endif %}>hr</option>
+                                                    <option value="d" {% if vk_basic_tokens_reset_unit == 'd' %}selected{% endif %}>day</option>
+                                                    <option value="w" {% if vk_basic_tokens_reset_unit == 'w' %}selected{% endif %}>week</option>
+                                                    <option value="M" {% if vk_basic_tokens_reset_unit == 'M' %}selected{% endif %}>month</option>
+                                                    <option value="Y" {% if vk_basic_tokens_reset_unit == 'Y' %}selected{% endif %}>year</option>
+                                                </select>
+                                            </div>
+                                        </div>
+                                        <div class="vk-grid-row">
+                                            <label for="vk-basic-budget">Budget</label>
+                                            <input type="number" id="vk-basic-budget" value="{{ vk_basic_budget }}" min="0.01" step="0.01">
+                                            <label>Reset</label>
+                                            <input type="number" id="vk-basic-budget-reset-n" value="{{ vk_basic_budget_reset_n }}" min="1" class="vk-reset-n">
+                                            <select id="vk-basic-budget-reset-unit">
+                                                <option value="m" {% if vk_basic_budget_reset_unit == 'm' %}selected{% endif %}>min</option>
+                                                <option value="h" {% if vk_basic_budget_reset_unit == 'h' %}selected{% endif %}>hr</option>
+                                                <option value="d" {% if vk_basic_budget_reset_unit == 'd' %}selected{% endif %}>day</option>
+                                                <option value="w" {% if vk_basic_budget_reset_unit == 'w' %}selected{% endif %}>week</option>
+                                                <option value="M" {% if vk_basic_budget_reset_unit == 'M' %}selected{% endif %}>month</option>
+                                                <option value="Y" {% if vk_basic_budget_reset_unit == 'Y' %}selected{% endif %}>year</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                </fieldset>
 
-                                <span class="vk-tier-label vk-tier-pro">Pro</span>
-                                <label for="vk-pro-rpm">RPM/user</label>
-                                <input type="number" id="vk-pro-rpm" value="100" min="1" max="10000">
-                                <label for="vk-pro-tpm">TPM/user</label>
-                                <input type="number" id="vk-pro-tpm" value="100000" min="1000" max="1000000">
-                                <label for="vk-pro-budget">Budget $</label>
-                                <input type="number" id="vk-pro-budget" value="5.00" min="0.01" step="0.01">
-                                <label for="vk-pro-reset">Reset</label>
-                                <select id="vk-pro-reset">
-                                    <option value="1h">1 h</option>
-                                    <option value="2h">2 h</option>
-                                    <option value="6h">6 h</option>
-                                    <option value="24h" selected>24 h</option>
-                                    <option value="1d">1 d</option>
-                                    <option value="1M">1 month</option>
-                                </select>
+                                    <fieldset>
+                                        <legend>Pro</legend>
+                                        <div class="vk-grid">
+                                            <div class="vk-grid-row-pair">
+                                                <div class="vk-grid-row">
+                                                    <label for="vk-pro-rpm">Requests</label>
+                                                    <input type="number" id="vk-pro-rpm" value="{{ vk_pro_requests }}" min="1" max="10000">
+                                                    <label>Reset</label>
+                                                    <input type="number" id="vk-pro-request-reset-n" value="{{ vk_pro_requests_reset_n }}" min="1" class="vk-reset-n">
+                                                    <select id="vk-pro-request-reset-unit">
+                                                        <option value="m" {% if vk_pro_requests_reset_unit == 'm' %}selected{% endif %}>min</option>
+                                                        <option value="h" {% if vk_pro_requests_reset_unit == 'h' %}selected{% endif %}>hr</option>
+                                                        <option value="d" {% if vk_pro_requests_reset_unit == 'd' %}selected{% endif %}>day</option>
+                                                        <option value="w" {% if vk_pro_requests_reset_unit == 'w' %}selected{% endif %}>week</option>
+                                                        <option value="M" {% if vk_pro_requests_reset_unit == 'M' %}selected{% endif %}>month</option>
+                                                        <option value="Y" {% if vk_pro_requests_reset_unit == 'Y' %}selected{% endif %}>year</option>
+                                                    </select>
+                                                </div>
+                                                <div class="vk-grid-row">
+                                                    <label for="vk-pro-tpm">Tokens</label>
+                                                    <input type="number" id="vk-pro-tpm" value="{{ vk_pro_tokens }}" min="1000" max="1000000">
+                                                    <label>Reset</label>
+                                                    <input type="number" id="vk-pro-token-reset-n" value="{{ vk_pro_tokens_reset_n }}" min="1" class="vk-reset-n">
+                                                    <select id="vk-pro-token-reset-unit">
+                                                        <option value="m" {% if vk_pro_tokens_reset_unit == 'm' %}selected{% endif %}>min</option>
+                                                        <option value="h" {% if vk_pro_tokens_reset_unit == 'h' %}selected{% endif %}>hr</option>
+                                                        <option value="d" {% if vk_pro_tokens_reset_unit == 'd' %}selected{% endif %}>day</option>
+                                                        <option value="w" {% if vk_pro_tokens_reset_unit == 'w' %}selected{% endif %}>week</option>
+                                                        <option value="M" {% if vk_pro_tokens_reset_unit == 'M' %}selected{% endif %}>month</option>
+                                                        <option value="Y" {% if vk_pro_tokens_reset_unit == 'Y' %}selected{% endif %}>year</option>
+                                                    </select>
+                                                </div>
+                                            </div>
+                                            <div class="vk-grid-row">
+                                                <label for="vk-pro-budget">Budget</label>
+                                                <input type="number" id="vk-pro-budget" value="{{ vk_pro_budget }}" min="0.01" step="0.01">
+                                                <label>Reset</label>
+                                                <input type="number" id="vk-pro-budget-reset-n" value="{{ vk_pro_budget_reset_n }}" min="1" class="vk-reset-n">
+                                                <select id="vk-pro-budget-reset-unit">
+                                                    <option value="m" {% if vk_pro_budget_reset_unit == 'm' %}selected{% endif %}>min</option>
+                                                    <option value="h" {% if vk_pro_budget_reset_unit == 'h' %}selected{% endif %}>hr</option>
+                                                    <option value="d" {% if vk_pro_budget_reset_unit == 'd' %}selected{% endif %}>day</option>
+                                                    <option value="w" {% if vk_pro_budget_reset_unit == 'w' %}selected{% endif %}>week</option>
+                                                    <option value="M" {% if vk_pro_budget_reset_unit == 'M' %}selected{% endif %}>month</option>
+                                                    <option value="Y" {% if vk_pro_budget_reset_unit == 'Y' %}selected{% endif %}>year</option>
+                                                </select>
+                                            </div>
+                                        </div>
+                                </fieldset>
                             </div>
                             <div class="form-row" style="margin-top:0.4rem">
-                                <button id="btn-assign-keys" onclick="assignVirtualKeys()">Assign</button>
-                                <button id="btn-revoke-keys" onclick="clearVirtualKeys()">Revoke</button>
+                                <button type="button" id="btn-assign-keys" onclick="assignVirtualKeys()">Assign</button>
+                                <button type="button" id="btn-revoke-keys" onclick="clearVirtualKeys()">Revoke</button>
                                 <span id="vk-status" class="vk-status {% if has_vkeys %}vk-active{% endif %}">
                                     {% if has_vkeys %}keys active{% else %}not assigned{% endif %}
                                 </span>
                             </div>
-                        </div>
-                        <div class="form-group-sep"></div>
-                        <div class="form-group">
-                            <span class="group-label">429 Backoff</span>
-                            <div class="form-row">
-                                <button id="strat-backoff" class="strat-btn" onclick="toggleStrategy('backoff')">Backoff</button>
-                                <span id="strategies-label" class="strategies-label"></span>
-                                <button onclick="confirmClearStats()" class="btn-clear-data">Clear data</button>
-                            </div>
-                        </div>
+                        </div>                        
                     </form>
                 </div>
             </div>
-        </div>
-
-        <div id="noisy-toolbar">
-            <span id="toolbar-label">Click tiles to select users</span>
-            <span class="toolbar-sep" id="toolbar-sep-behaviour" style="display:none">Behaviour:</span>
-            <button id="btn-make-normal"  onclick="applyMode('normal')"   style="display:none">Normal</button>
-            <button id="btn-make-bursty"  onclick="applyMode('bursty')"   style="display:none">Bursty</button>
-            <button id="btn-make-spammer" onclick="applyMode('spammer')"  style="display:none">Spammer</button>
-            <span class="toolbar-sep" id="toolbar-sep-tier" style="display:none">Tier:</span>
-            <button id="btn-make-basic"   onclick="applyTier('basic')"    style="display:none">Basic</button>
-            <button id="btn-make-pro"     onclick="applyTier('pro')"      style="display:none">Pro</button>
-            <button id="btn-reset-modes"  onclick="resetAllModes()">Reset all</button>
-            <button id="btn-clear-sel"    onclick="clearSelection()"      style="display:none">Clear selection</button>
         </div>
 
         <div class="users" id="users-grid"></div>
@@ -219,11 +281,12 @@
 
         const USER_IDS = Array.from({length: 50}, (_, i) => i + 1);
 
-        const COST_PER_1K_INPUT  = {{ cost_per_1k_input }};
-        const COST_PER_1K_OUTPUT = {{ cost_per_1k_output }};
+        const COST_PER_1M_INPUT  = {{ cost_per_1m_input|floatformat:2 }};
+        const COST_PER_1M_OUTPUT = {{ cost_per_1m_output|floatformat:2 }};
 
+        const _persistedSpend = {{ user_spend_json|safe }};
         const userSpend = {};
-        USER_IDS.forEach(id => { userSpend[id] = 0; });
+        USER_IDS.forEach(id => { userSpend[id] = _persistedSpend[id] || 0; });
         let spendSessionStart = Date.now();
 
         // Per-user sliding window: {ts, latency_ms} — always last 60s so count === observed RPM
@@ -266,6 +329,7 @@
 
         // Decay display and recompute per-group stats every second
         setInterval(() => {
+            if (!running) return;
             USER_IDS.forEach(renderUserMetrics);
 
             // Accumulators: groups[tier][behaviour] = {total, errors, latSum, userCount}
@@ -274,7 +338,7 @@
             const groups = {};
             for (const t of tiers) {
                 groups[t] = {};
-                for (const m of modes) groups[t][m] = { total: 0, errors: 0, latSum: 0, userCount: 0 };
+                for (const m of modes) groups[t][m] = { total: 0, errors: 0, latSum: 0, userCount: 0, lats: [] };
             }
 
             USER_IDS.forEach(id => {
@@ -285,24 +349,44 @@
                 for (const e of userWindow[id]) {
                     g.total++;
                     g.latSum += e.latency_ms;
+                    g.lats.push(e.latency_ms);
                     if (!e.success) g.errors++;
                 }
             });
 
             for (const t of tiers) {
-                let tierTotal = 0;
+                let tierUsers = 0, tierTotal = 0, tierLatSum = 0, tierErrors = 0, tierLats = [];
                 for (const m of modes) {
                     const g = groups[t][m];
-                    tierTotal += g.userCount;
+                    tierUsers  += g.userCount;
+                    tierTotal  += g.total;
+                    tierLatSum += g.latSum;
+                    tierErrors += g.errors;
+                    tierLats    = tierLats.concat(g.lats);
                     const pfx = `${t}-${m}`;
+                    const sorted = g.lats.length > 0 ? [...g.lats].sort((a, b) => a - b) : null;
+                    const mean = g.total > 0 ? Math.round(g.latSum / g.total) : null;
+                    const p50  = sorted ? sorted[Math.floor(sorted.length * 0.50)] : null;
+                    const p95  = sorted ? sorted[Math.floor(sorted.length * 0.95)] : null;
                     document.getElementById(`${pfx}-user-count`).textContent  = g.userCount;
                     document.getElementById(`${pfx}-stat-total`).textContent  = g.total;
                     document.getElementById(`${pfx}-stat-latency`).textContent =
-                        g.total > 0 ? Math.round(g.latSum / g.total) + ' ms' : '—';
+                        mean !== null
+                            ? `${mean} / ${p50} / ${p95} ms`
+                            : '—';
                     document.getElementById(`${pfx}-stat-error-rate`).textContent =
                         g.total > 0 ? ((g.errors / g.total) * 100).toFixed(1) + '%' : '—';
                 }
-                document.getElementById(`${t}-user-count`).textContent = tierTotal;
+                const tierSorted = tierLats.length > 0 ? [...tierLats].sort((a, b) => a - b) : null;
+                const tierMean = tierTotal > 0 ? Math.round(tierLatSum / tierTotal) : null;
+                const tierP50  = tierSorted ? tierSorted[Math.floor(tierSorted.length * 0.50)] : null;
+                const tierP95  = tierSorted ? tierSorted[Math.floor(tierSorted.length * 0.95)] : null;
+                document.getElementById(`${t}-user-count`).textContent = tierUsers;
+                document.getElementById(`${t}-stat-total`).textContent = tierTotal;
+                document.getElementById(`${t}-stat-latency`).textContent =
+                    tierMean !== null ? `${tierMean} / ${tierP50} / ${tierP95} ms` : '—';
+                document.getElementById(`${t}-stat-error-rate`).textContent =
+                    tierTotal > 0 ? ((tierErrors / tierTotal) * 100).toFixed(1) + '%' : '—';
             }
         }, 1000);
 
@@ -354,6 +438,14 @@
                 </div>
             `;
             grid.appendChild(div);
+        });
+
+        // Seed tile spend displays from persisted data
+        USER_IDS.forEach(id => {
+            if (userSpend[id]) {
+                const el = document.getElementById(`spend-${id}`);
+                if (el) el.textContent = '$' + userSpend[id].toFixed(4);
+            }
         });
 
         function toggleSelect(id) {
@@ -410,14 +502,18 @@
         async function applyTier(tier) {
             const payload = { user_ids: [...selectedIds], tier };
             if (vkeysActive) {
-                payload.basic_rpm    = parseInt(document.getElementById('vk-basic-rpm').value, 10);
-                payload.basic_tpm    = parseInt(document.getElementById('vk-basic-tpm').value, 10);
+                payload.basic_requests    = parseInt(document.getElementById('vk-basic-rpm').value, 10);
+                payload.basic_tokens    = parseInt(document.getElementById('vk-basic-tpm').value, 10);
                 payload.basic_budget = parseFloat(document.getElementById('vk-basic-budget').value);
-                payload.basic_reset  = document.getElementById('vk-basic-reset').value;
-                payload.pro_rpm      = parseInt(document.getElementById('vk-pro-rpm').value, 10);
-                payload.pro_tpm      = parseInt(document.getElementById('vk-pro-tpm').value, 10);
+                payload.basic_budget_reset  = vkReset('vk-basic-budget');
+                payload.basic_requests_reset  = vkReset('vk-basic-request');
+                payload.basic_tokens_reset  = vkReset('vk-basic-token');
+                payload.pro_requests      = parseInt(document.getElementById('vk-pro-rpm').value, 10);
+                payload.pro_tokens      = parseInt(document.getElementById('vk-pro-tpm').value, 10);
                 payload.pro_budget   = parseFloat(document.getElementById('vk-pro-budget').value);
-                payload.pro_reset    = document.getElementById('vk-pro-reset').value;
+                payload.pro_budget_reset    = vkReset('vk-pro-budget');
+                payload.pro_requests_reset  = vkReset('vk-pro-request');
+                payload.pro_tokens_reset    = vkReset('vk-pro-token');
             }
             await fetch('/tier/', {
                 method: 'POST',
@@ -451,13 +547,16 @@
             const sel = document.getElementById('tier-select');
             const currentRpm = {{ rpm_limit }};
             const currentTpm = {{ tpm_limit }};
+            const tier1Index = TIERS.findIndex(t => t.label === 'Tier 1');
+            let matched = false;
             TIERS.forEach((t, i) => {
                 const opt = document.createElement('option');
                 opt.value = i;
                 opt.textContent = `${t.label} — ${t.rpm.toLocaleString()} RPM / ${t.tpm.toLocaleString()} TPM`;
-                if (t.rpm === currentRpm && t.tpm === currentTpm) opt.selected = true;
+                if (t.rpm === currentRpm && t.tpm === currentTpm) { opt.selected = true; matched = true; }
                 sel.appendChild(opt);
             });
+            if (!matched && tier1Index >= 0) sel.value = tier1Index;
         }
 
 async function saveConfig() {
@@ -492,6 +591,7 @@ async function saveConfig() {
             rpmChart.update('none'); tpmChart.update('none');
             LAT_GROUPS.forEach((k, i) => {
                 latencyChartData[k] = [];
+                latEma[k] = null;
                 latencyChart.data.datasets[i].data = [];
             });
             latencyChart.update('none');
@@ -508,6 +608,11 @@ async function saveConfig() {
         async function confirmClearStats() {
             if (!confirm('Clear all simulator stats and chart data?')) return;
             await clearStats();
+            if (vkeysActive) {
+                // Cycle virtual keys so Bifrost resets budget/usage counters
+                await fetch('/virtual-keys/clear/', { method: 'POST', headers: { 'Content-Type': 'application/json' } });
+                await assignVirtualKeys();
+            }
         }
 
         // ── Charts ────────────────────────────────────────────────────────────
@@ -528,6 +633,9 @@ async function saveConfig() {
         const LAT_GROUPS = ['basic-normal', 'basic-bursty', 'basic-spammer', 'pro-normal', 'pro-bursty', 'pro-spammer'];
         const latencyChartData = {};
         LAT_GROUPS.forEach(k => { latencyChartData[k] = []; });
+        const LAT_EMA_ALPHA = 0.15;   // lower = smoother; 0.15 ≈ 10-sample memory
+        const latEma = {};
+        LAT_GROUPS.forEach(k => { latEma[k] = null; });
 
         function buildChart(canvasId, data, label) {
             const ctx = document.getElementById(canvasId).getContext('2d');
@@ -714,6 +822,7 @@ async function saveConfig() {
         const spendChart = buildSpendChart('spend-chart');
 
         setInterval(() => {
+            if (!running) return;
             const now = Date.now();
             USER_IDS.forEach((id, i) => {
                 spendChart.data.datasets[i].data.push({ x: now, y: userSpend[id] });
@@ -726,6 +835,7 @@ async function saveConfig() {
         // ── End Spend chart ───────────────────────────────────────────────────
 
         function sampleRateLimits() {
+            if (!running) return;
             const now = Date.now();
             const chartCutoff = now - CHART_WINDOW_MS;
             const rateCutoff  = now - RATE_WINDOW_MS;
@@ -778,7 +888,11 @@ async function saveConfig() {
             });
             LAT_GROUPS.forEach((key, i) => {
                 const g = latAccum[key];
-                latencyChartData[key].push({ x: now, y: g.total > 0 ? Math.round(g.latSum / g.total) : null });
+                const raw = g.total > 0 ? (g.latSum / g.total) : null;
+                if (raw !== null) {
+                    latEma[key] = latEma[key] === null ? raw : latEma[key] * (1 - LAT_EMA_ALPHA) + raw * LAT_EMA_ALPHA;
+                }
+                latencyChartData[key].push({ x: now, y: latEma[key] !== null ? Math.round(latEma[key]) : null });
                 latencyChartData[key] = latencyChartData[key].filter(p => p.x >= chartCutoff);
                 latencyChart.data.datasets[i].data = latencyChartData[key];
             });
@@ -818,7 +932,7 @@ async function saveConfig() {
 
             // Accumulate spend (only on success, matching backend behaviour)
             if (d.success) {
-                const cost = (d.input_tokens / 1000 * COST_PER_1K_INPUT) + (d.output_tokens / 1000 * COST_PER_1K_OUTPUT);
+                const cost = (d.input_tokens / 1000000 * COST_PER_1M_INPUT) + (d.output_tokens / 1000000 * COST_PER_1M_OUTPUT);
                 userSpend[d.user_id] = (userSpend[d.user_id] || 0) + cost;
                 const spendEl = document.getElementById(`spend-${d.user_id}`);
                 if (spendEl) spendEl.textContent = '$' + userSpend[d.user_id].toFixed(4);
@@ -858,10 +972,6 @@ async function saveConfig() {
                 const name = btn.id.replace('strat-', '');
                 btn.classList.toggle('active', activeStrategies.has(name));
             });
-            const label = document.getElementById('strategies-label');
-            label.textContent = activeStrategies.size > 0
-                ? '● ' + [...activeStrategies].join(', ')
-                : '';
         }
 
         async function toggleStrategy(name) {
@@ -875,6 +985,24 @@ async function saveConfig() {
             });
         }
 
+        let currentUsagePattern = '{{ usage_pattern }}';
+
+        function applyUsagePattern(pattern) {
+            currentUsagePattern = pattern;
+            document.querySelectorAll('.usage-btn').forEach(btn => {
+                btn.classList.toggle('active', btn.id === `usage-${pattern}`);
+            });
+        }
+
+        async function setUsagePattern(pattern) {
+            applyUsagePattern(pattern);
+            await fetch('/usage-pattern/', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ pattern }),
+            });
+        }
+
         let vkeysActive = {{ has_vkeys|yesno:"true,false" }};
 
         function _setVkState(active) {
@@ -883,24 +1011,34 @@ async function saveConfig() {
             document.getElementById('btn-revoke-keys').style.display = active ? '' : 'none';
         }
 
+        function vkReset(prefix) {
+            const n    = document.getElementById(`${prefix}-reset-n`).value;
+            const unit = document.getElementById(`${prefix}-reset-unit`).value;
+            return n + unit;
+        }
+
         async function assignVirtualKeys() {
             const btn = document.getElementById('btn-assign-keys');
             const statusEl = document.getElementById('vk-status');
             btn.disabled = true;
-            const payload = {
-                basic_rpm:    parseInt(document.getElementById('vk-basic-rpm').value, 10),
-                basic_tpm:    parseInt(document.getElementById('vk-basic-tpm').value, 10),
-                basic_budget: parseFloat(document.getElementById('vk-basic-budget').value),
-                basic_reset:  document.getElementById('vk-basic-reset').value,
-                pro_rpm:      parseInt(document.getElementById('vk-pro-rpm').value, 10),
-                pro_tpm:      parseInt(document.getElementById('vk-pro-tpm').value, 10),
-                pro_budget:   parseFloat(document.getElementById('vk-pro-budget').value),
-                pro_reset:    document.getElementById('vk-pro-reset').value,
-            };
-            const url = vkeysActive ? '/virtual-keys/update/' : '/virtual-keys/';
             statusEl.textContent = vkeysActive ? 'updating…' : 'creating…';
             statusEl.className = 'vk-status';
             try {
+                const payload = {
+                    basic_requests:    parseInt(document.getElementById('vk-basic-rpm').value, 10),
+                    basic_requests_reset:  vkReset('vk-basic-request'),
+                    basic_tokens:    parseInt(document.getElementById('vk-basic-tpm').value, 10),
+                    basic_tokens_reset:  vkReset('vk-basic-token'),
+                    basic_budget: parseFloat(document.getElementById('vk-basic-budget').value),
+                    basic_budget_reset:  vkReset('vk-basic-budget'),
+                    pro_requests:      parseInt(document.getElementById('vk-pro-rpm').value, 10),
+                    pro_requests_reset:  vkReset('vk-pro-request'),
+                    pro_tokens:      parseInt(document.getElementById('vk-pro-tpm').value, 10),
+                    pro_tokens_reset:  vkReset('vk-pro-token'),
+                    pro_budget:   parseFloat(document.getElementById('vk-pro-budget').value),
+                    pro_budget_reset:  vkReset('vk-pro-budget'),
+                };
+                const url = vkeysActive ? '/virtual-keys/update/' : '/virtual-keys/';
                 const resp = await fetch(url, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -917,8 +1055,8 @@ async function saveConfig() {
                     statusEl.textContent = `${count} ok, ${nFail} failed`;
                     statusEl.className = 'vk-status vk-error';
                 }
-            } catch {
-                statusEl.textContent = 'error';
+            } catch (e) {
+                statusEl.textContent = 'error: ' + e.message;
                 statusEl.className = 'vk-status vk-error';
             } finally {
                 btn.disabled = false;
@@ -936,6 +1074,7 @@ async function saveConfig() {
         _setVkState(vkeysActive);
 
         applyStrategies([...activeStrategies]);
+        applyUsagePattern(currentUsagePattern);
         setRunning(running);
         connectWS();
     </script>

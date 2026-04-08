@@ -60,6 +60,18 @@ header h1 { font-size: 1.25rem; font-weight: 600; flex: 1; }
 .strat-btn { transition: background 0.15s, color 0.15s; }
 .strat-btn.active { background: #0ea5e9; color: #fff; }
 .strat-btn.active:hover { background: #38bdf8; }
+
+
+.usage-toggle { display: flex;}
+.usage-btn {
+    background: #1e293b; border: none; color: #64748b;
+    padding: 0.3rem 0.6rem; cursor: pointer; display: flex; align-items: center;
+    transition: background 0.15s, color 0.15s;
+    margin-right: 0.3rem;
+}
+.usage-btn + .usage-btn { border-left: 1px solid #334155; }
+.usage-btn:hover { background: #273449; color: #94a3b8; }
+.usage-btn.active { background: #0ea5e9; color: #fff; }
 .strategies-label { color: #0ea5e9; font-size: 0.75rem; font-weight: 600; }
 .vk-status { font-size: 0.7rem; color: #64748b; white-space: nowrap; }
 .vk-status.vk-active { color: #4ade80; font-weight: 600; }
@@ -71,25 +83,59 @@ header h1 { font-size: 1.25rem; font-weight: 600; flex: 1; }
 }
 .vk-tier-label.vk-tier-pro { color: #c4b5fd; border-color: #7c3aed; background: #1a1040; }
 
+.vk-settings {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+.vk-settings fieldset {
+    border: 1px solid #334155;
+    border-radius: 0.5rem;
+    background: #111b2c;
+    padding: 0.6rem 0.7rem 0.7rem;
+    min-width: 0;
+}
+.vk-settings legend {
+    color: #94a3b8;
+    font-size: 0.65rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    padding: 0 0.35rem;
+}
+
 .vk-grid {
     display: grid;
-    grid-template-columns: auto auto 4rem auto 5.5rem auto 4rem auto auto;
-    align-items: center;
-    gap: 0.35rem 0.5rem;
+    gap: 0.35rem;
     font-size: 0.8rem;
     color: #94a3b8;
 }
+.vk-grid-row {
+    display: grid;
+    grid-template-columns: 4.75rem minmax(5.25rem, 6.5rem) 3.25rem 4.25rem 4.5rem;
+    align-items: center;
+    column-gap: 0.5rem;
+}
+.vk-reset-n { text-align: center; }
 .vk-grid label { white-space: nowrap; }
 .vk-grid input[type=number] {
     background: #0f172a; border: 1px solid #334155; border-radius: 0.375rem;
-    color: #f1f5f9; padding: 0.3rem 0.5rem; font-size: 0.8rem; text-align: center; width: 100%;
+    color: #f1f5f9; padding: 0.3rem 0.5rem; font-size: 0.8rem; text-align: center;
+}
+.vk-grid-row input[type=number] {
+    width: 100%;
 }
 .vk-grid select {
     background: #0f172a; border: 1px solid #334155; border-radius: 0.375rem;
     color: #f1f5f9; padding: 0.3rem 0.5rem; font-size: 0.8rem;
 }
-
-.btn-clear-data { margin-left: auto; }
+@media (max-width: 700px) {
+    .vk-grid-row {
+        grid-template-columns: 1fr;
+        row-gap: 0.35rem;
+    }
+}
 
 /* Mode toolbar */
 #noisy-toolbar {

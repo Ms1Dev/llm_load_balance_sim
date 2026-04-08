@@ -8,7 +8,7 @@ REDIS_URL = os.environ.get('REDIS_URL', 'redis://redis:6379')
 
 class Config(models.Model):
     rpm_limit = models.PositiveIntegerField(
-        default=200,
+        default=500,
         help_text="Maximum requests per minute allowed by the vLLM.",
     )
     tpm_limit = models.PositiveIntegerField(
@@ -24,7 +24,8 @@ class Config(models.Model):
         help_text="Average requests per minute for normal (non-spammer, non-bursty) users.",
     )
     # Comma-separated active strategy names, e.g. 'backoff,throttle'
-    active_strategies   = models.CharField(max_length=64, blank=True, default='')
+    active_strategies   = models.CharField(max_length=64, blank=True, default='backoff')
+    usage_pattern       = models.CharField(max_length=32, default='sine_wave')
 
     class Meta:
         verbose_name = verbose_name_plural = "Configuration"
@@ -35,6 +36,7 @@ class Config(models.Model):
             'config:rpm_limit':        self.rpm_limit,
             'config:tpm_limit':        self.tpm_limit,
             'config:normal_user_rpm':  self.normal_user_rpm,
+            'config:usage_pattern':    self.usage_pattern,
         })
         strategies = [s for s in self.active_strategies.split(',') if s]
         pipe.delete('config:strategies')
@@ -52,11 +54,12 @@ class Config(models.Model):
     @classmethod
     def get(cls):
         obj, _ = cls.objects.get_or_create(pk=1, defaults={
-            'rpm_limit':           200,
+            'rpm_limit':           500,
             'tpm_limit':           200000,
             'stats_window_minutes': 5,
             'normal_user_rpm':     6,
-            'active_strategies':   '',
+            'active_strategies':   'backoff',
+            'usage_pattern':       'sine_wave',
         })
         r = redis_sync.from_url(REDIS_URL)
         obj._sync_to_redis(r)
@@ -87,6 +90,7 @@ class SimUser(models.Model):
     tier       = models.CharField(max_length=8,  choices=TIER_CHOICES, default=TIER_BASIC)
     vkey_value = models.CharField(max_length=128, blank=True, default='')
     vkey_id    = models.CharField(max_length=128, blank=True, default='')
+    spend      = models.FloatField(default=0.0)
 
     class Meta:
         verbose_name_plural = 'Simulated Users'
@@ -141,13 +145,17 @@ class SimUser(models.Model):
 
 class VirtualKeySettings(models.Model):
     # Basic tier settings
-    rpm_per_user  = models.PositiveIntegerField(default=50)
-    tpm_per_user  = models.PositiveIntegerField(default=50000)
+    requests_per_user  = models.PositiveIntegerField(default=10)
+    requests_reset  = models.CharField(max_length=10, default='1m')
+    tokens_per_user  = models.PositiveIntegerField(default=10000)
+    tokens_reset = models.CharField(max_length=10, default='1m')
     budget_limit  = models.FloatField(default=1.0)
     budget_reset  = models.CharField(max_length=10, default='24h')
     # Pro tier settings
-    pro_rpm_per_user = models.PositiveIntegerField(default=100)
-    pro_tpm_per_user = models.PositiveIntegerField(default=100000)
+    pro_requests_per_user = models.PositiveIntegerField(default=20)
+    pro_requests_reset = models.CharField(max_length=10, default='1m')
+    pro_tokens_per_user = models.PositiveIntegerField(default=20000)
+    pro_tokens_reset = models.CharField(max_length=10, default='1m')
     pro_budget_limit = models.FloatField(default=5.0)
     pro_budget_reset = models.CharField(max_length=10, default='24h')
 
@@ -161,12 +169,16 @@ class VirtualKeySettings(models.Model):
     @classmethod
     def get(cls):
         obj, _ = cls.objects.get_or_create(pk=1, defaults={
-            'rpm_per_user': 50,
-            'tpm_per_user': 50000,
+            'requests_per_user': 10,
+            'requests_reset': '1m',
+            'tokens_per_user': 10000,
+            'tokens_reset': '1m',
             'budget_limit': 1.0,
             'budget_reset': '24h',
-            'pro_rpm_per_user': 100,
-            'pro_tpm_per_user': 100000,
+            'pro_requests_per_user': 20,
+            'pro_requests_reset': '1m',
+            'pro_tokens_per_user': 20000,
+            'pro_tokens_reset': '1m',
             'pro_budget_limit': 5.0,
             'pro_budget_reset': '24h',
         })

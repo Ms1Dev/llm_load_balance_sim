@@ -22,7 +22,7 @@ def _count_tokens(text: str) -> int:
 
 BASE_URL = os.environ.get("OPENAI_BASE_URL", "http://bifrost:8080/v1")
 API_KEY = os.environ.get("OPENAI_API_KEY", "mocked-openai-key-1")
-MODEL = os.environ.get("OPENAI_MODEL", "openai/gpt-4o-mini")
+MODEL = os.environ.get("OPENAI_MODEL", "openai/gpt-5.4-mini")
 REDIS_URL = os.environ.get("REDIS_URL", "redis://redis:6379")
 
 USER_IDS = list(range(1, 51))
@@ -55,19 +55,35 @@ _STATS_WINDOW_SEC = 60.0
 _stats_lock = threading.Lock()
 
 
+_burst_state = {"in_burst": False, "phase_end": 0.0}
 
 def get_usage_multiplier(usage: Usage) -> tuple[float, float]:
     if usage == Usage.CONISTENT:
         return 1
     if usage == Usage.SINE_WAVE:
-        # Generate a sine multiplier between 0.5 and 1.5.
-        # The value completes one full cycle every minute.
-        t = time.time()  # current time in seconds
-        # (t % 60) goes from 0 to 59 within each minute
-        phase = (t % 60) / 60.0  # 0 to <1 over a minute
-        # Sine in [0, 2pi] over a minute
+        t = time.time() 
+        phase = (t % 60) / 60.0  
         sine_value = 0.5 * (math.sin(2 * math.pi * phase) + 1) + 0.5  # Range: 0.5—1.5
         return sine_value
+    if usage == Usage.BURSTY:
+        t = time.time()
+
+        hour = (t % 86400) / 3600
+        x = (hour - 14) / 12 * math.pi
+        diurnal = 0.05 + 0.95 * (((math.cos(x) + 1) / 2) ** 0.6)
+
+        now = time.monotonic()
+        bs = _burst_state
+        if now >= bs["phase_end"]:
+            bs["in_burst"] = not bs["in_burst"]
+            bs["phase_end"] = now + (
+                random.uniform(5.0, 12.0) if bs["in_burst"]
+                else random.uniform(75.0, 108.0)
+            )
+
+        burst_multiplier = random.uniform(4.0, 8.0) if bs["in_burst"] else 1.0
+
+        return diurnal * burst_multiplier
 
 def is_running() -> bool:
     return _running
@@ -131,6 +147,16 @@ async def _get_baseline_rpm(redis_client) -> float:
     return float(val) if val else DEFAULT_BASELINE_RPM
 
 
+async def _get_usage_pattern(redis_client) -> Usage:
+    val = await redis_client.get('config:usage_pattern')
+    if val:
+        try:
+            return Usage(val.decode())
+        except ValueError:
+            pass
+    return Usage.SINE_WAVE
+
+
 async def _get_user_mode(redis_client, user_id: int) -> str:
     """Return 'spammer', 'bursty', or 'normal'."""
     pipe = redis_client.pipeline(transaction=False)
@@ -192,7 +218,8 @@ async def _user_loop(session: aiohttp.ClientSession, user_id: int, redis_client)
             rpm = BURSTY_RPM
         else:
             baseline = await _get_baseline_rpm(redis_client)
-            rpm = _bell(max(1, baseline - VARIABILITY), baseline + VARIABILITY) * get_usage_multiplier(USAGE_MULTIPLIER)
+            pattern = await _get_usage_pattern(redis_client)
+            rpm = _bell(max(1, baseline - VARIABILITY), baseline + VARIABILITY) * get_usage_multiplier(pattern)
         prompt = generate_prompt(1)[0]
         input_tokens = _count_tokens(prompt)  # pre-count so 429s still show real token usage
         t0 = time.monotonic()

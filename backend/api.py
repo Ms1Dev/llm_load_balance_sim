@@ -1,9 +1,12 @@
 import json
+import logging
 import os
 import random
 import asyncio
 from contextlib import asynccontextmanager
 from datetime import datetime
+
+logger = logging.getLogger("api")
 
 import httpx
 import redis.asyncio as aioredis
@@ -13,8 +16,8 @@ from starlette.requests import ClientDisconnect
 
 BIFROST_URL      = os.environ.get("BIFROST_URL",        "http://bifrost:8080/v1")
 REDIS_URL        = os.environ.get("REDIS_URL",          "redis://redis:6379")
-COST_PER_1K_INPUT  = float(os.environ.get("COST_PER_1K_INPUT",  "0.00015"))
-COST_PER_1K_OUTPUT = float(os.environ.get("COST_PER_1K_OUTPUT", "0.00060"))
+COST_PER_1M_INPUT  = float(os.environ.get("COST_PER_1M_INPUT",  "0.75"))
+COST_PER_1M_OUTPUT = float(os.environ.get("COST_PER_1M_OUTPUT", "4.50"))
 
 MAX_RETRIES: int = 3
 BASE_DELAY: float = 2.0
@@ -59,8 +62,8 @@ async def _sleep_backoff(attempt: int, retry_after_s: float | None = None) -> No
 
 async def _record_usage(redis: aioredis.Redis, user_id: str,
                         input_tokens: int, output_tokens: int) -> None:
-    cost = (input_tokens  / 1000 * COST_PER_1K_INPUT +
-            output_tokens / 1000 * COST_PER_1K_OUTPUT)
+    cost = (input_tokens  / 1000000 * COST_PER_1M_INPUT +
+            output_tokens / 1000000 * COST_PER_1M_OUTPUT)
     pipe = redis.pipeline()
     pipe.hincrbyfloat(f"usage:{user_id}:tokens", "input",  input_tokens)
     pipe.hincrbyfloat(f"usage:{user_id}:tokens", "output", output_tokens)
@@ -180,6 +183,7 @@ async def chat_completions(request: Request):
         # Non-retryable error (4xx etc) — return immediately
         error_body = await upstream_resp.aread()
         await upstream_resp.aclose()
+        logger.warning("Bifrost %s for user %s: %s", upstream_resp.status_code, user_id, error_body.decode()[:500])
         return JSONResponse(
             content=json.loads(error_body),
             status_code=upstream_resp.status_code,
