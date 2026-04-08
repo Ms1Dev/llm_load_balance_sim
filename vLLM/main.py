@@ -1,5 +1,7 @@
+import asyncio
 import json
 import os
+import random
 import time
 import uuid
 
@@ -20,6 +22,13 @@ SLIDING_WINDOW_SECONDS = 60.0
 # Suggested client retry wait (seconds). Kept separate from the sliding window —
 # the window defines the limiter; Retry-After should be a short backoff hint.
 RETRY_AFTER_SECONDS = float(os.environ.get("RATE_LIMIT_RETRY_AFTER", "5"))
+
+# Simulated latency. BASE_LATENCY_S is the mean response time; random jitter of
+# ±LATENCY_JITTER (fraction) is applied. TOKEN_LATENCY_S_PER_1K adds extra time
+# proportional to input length, simulating prompt-processing cost.
+BASE_LATENCY_S        = float(os.environ.get("BASE_LATENCY_S",        "0.3"))
+TOKEN_LATENCY_S_PER_100 = float(os.environ.get("TOKEN_LATENCY_S_PER_100", "0.01"))
+LATENCY_JITTER        = float(os.environ.get("LATENCY_JITTER",        "0.4"))
 
 _config_cache: dict = {}
 _config_updated_at: float = 0.0
@@ -90,6 +99,13 @@ def count_input_tokens(messages: list) -> int:
         for msg in messages
         if isinstance(msg.get("content"), str)
     )
+
+
+async def simulate_latency(input_tokens: int) -> None:
+    token_component = (input_tokens / 100) * TOKEN_LATENCY_S_PER_100
+    base = BASE_LATENCY_S + token_component
+    delay = base * (1.0 + random.uniform(-LATENCY_JITTER, LATENCY_JITTER))
+    await asyncio.sleep(max(0.0, delay))
 
 
 @asynccontextmanager
@@ -173,6 +189,8 @@ async def chat_completions(request: Request):
         "x-ratelimit-limit-tokens": str(tpm_limit),
         "x-ratelimit-remaining-tokens": str(tpm_remaining),
     }
+
+    await simulate_latency(input_tokens)
 
     upstream_headers = {
         k: v for k, v in request.headers.items()
