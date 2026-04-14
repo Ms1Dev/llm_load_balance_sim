@@ -20,6 +20,7 @@ def _count_tokens(text: str) -> int:
         enc = tiktoken.get_encoding("cl100k_base")
     return len(enc.encode(text))
 
+
 BASE_URL = os.environ.get("OPENAI_BASE_URL", "http://bifrost:8080/v1")
 API_KEY = os.environ.get("OPENAI_API_KEY", "mocked-openai-key-1")
 MODEL = os.environ.get("OPENAI_MODEL", "openai/gpt-5.4-mini")
@@ -28,21 +29,23 @@ REDIS_URL = os.environ.get("REDIS_URL", "redis://redis:6379")
 USER_IDS = list(range(1, 51))
 
 DEFAULT_BASELINE_RPM = 6
-SPAMMER_RPM  = 200
-BURSTY_RPM   = 120
-VARIABILITY  = 5
+SPAMMER_RPM = 200
+BURSTY_RPM = 120
+VARIABILITY = 5
 
 # Bursty cycle: burst at BURSTY_RPM for a short window, then go quiet.
 # Expected average: 120 × 8.5s / (8.5 + 91.5)s ≈ 10 RPM
-BURSTY_BURST_MIN =  5.0
+BURSTY_BURST_MIN = 5.0
 BURSTY_BURST_MAX = 12.0
 BURSTY_PAUSE_MIN = 75.0
 BURSTY_PAUSE_MAX = 108.0
+
 
 class Usage(Enum):
     CONISTENT = "consistent"
     SINE_WAVE = "sine_wave"
     BURSTY = "bursty"
+
 
 USAGE_MULTIPLIER = Usage.SINE_WAVE
 
@@ -57,12 +60,13 @@ _stats_lock = threading.Lock()
 
 _burst_state = {"in_burst": False, "phase_end": 0.0}
 
+
 def get_usage_multiplier(usage: Usage) -> tuple[float, float]:
     if usage == Usage.CONISTENT:
         return 1
     if usage == Usage.SINE_WAVE:
-        t = time.time() 
-        phase = (t % 60) / 60.0  
+        t = time.time()
+        phase = (t % 60) / 60.0
         sine_value = 0.5 * (math.sin(2 * math.pi * phase) + 1) + 0.5  # Range: 0.5—1.5
         return sine_value
     if usage == Usage.BURSTY:
@@ -77,13 +81,15 @@ def get_usage_multiplier(usage: Usage) -> tuple[float, float]:
         if now >= bs["phase_end"]:
             bs["in_burst"] = not bs["in_burst"]
             bs["phase_end"] = now + (
-                random.uniform(5.0, 12.0) if bs["in_burst"]
+                random.uniform(5.0, 12.0)
+                if bs["in_burst"]
                 else random.uniform(75.0, 108.0)
             )
 
         burst_multiplier = random.uniform(4.0, 8.0) if bs["in_burst"] else 1.0
 
         return diurnal * burst_multiplier
+
 
 def is_running() -> bool:
     return _running
@@ -120,35 +126,38 @@ def _bell(low: float, high: float) -> float:
     return max(low, min(high, random.gauss(mean, std)))
 
 
-
 def _thread_main():
     asyncio.run(_run_loop())
 
 
 async def _emit(event_type: str, data: dict):
     from channels.layers import get_channel_layer
+
     channel_layer = get_channel_layer()
     if channel_layer is None:
         return
-    await channel_layer.group_send("simulator", {
-        "type": "simulator.event",
-        "event_type": event_type,
-        "data": data,
-    })
+    await channel_layer.group_send(
+        "simulator",
+        {
+            "type": "simulator.event",
+            "event_type": event_type,
+            "data": data,
+        },
+    )
 
 
 async def _get_user_api_key(redis_client, user_id: int) -> str:
-    key = await redis_client.get(f'config:vkey:{user_id}')
+    key = await redis_client.get(f"config:vkey:{user_id}")
     return key.decode() if key else API_KEY
 
 
 async def _get_baseline_rpm(redis_client) -> float:
-    val = await redis_client.get('config:normal_user_rpm')
+    val = await redis_client.get("config:normal_user_rpm")
     return float(val) if val else DEFAULT_BASELINE_RPM
 
 
 async def _get_usage_pattern(redis_client) -> Usage:
-    val = await redis_client.get('config:usage_pattern')
+    val = await redis_client.get("config:usage_pattern")
     if val:
         try:
             return Usage(val.decode())
@@ -160,39 +169,41 @@ async def _get_usage_pattern(redis_client) -> Usage:
 async def _get_user_mode(redis_client, user_id: int) -> str:
     """Return 'spammer', 'bursty', or 'normal'."""
     pipe = redis_client.pipeline(transaction=False)
-    pipe.sismember('config:spammer_users', str(user_id))
-    pipe.sismember('config:bursty_users',  str(user_id))
+    pipe.sismember("config:spammer_users", str(user_id))
+    pipe.sismember("config:bursty_users", str(user_id))
     is_spammer, is_bursty = await pipe.execute()
     if is_spammer:
-        return 'spammer'
+        return "spammer"
     if is_bursty:
-        return 'bursty'
-    return 'normal'
+        return "bursty"
+    return "normal"
 
 
 async def _user_loop(session: aiohttp.ClientSession, user_id: int, redis_client):
     # Local bursty state machine — no Redis state needed
-    prev_mode       = 'normal'
+    prev_mode = "normal"
     bursty_bursting = False
     bursty_phase_end = 0.0
 
-    await asyncio.sleep(random.uniform(0, 20.0))   # spread initial requests across 20s
+    await asyncio.sleep(random.uniform(0, 20.0))  # spread initial requests across 20s
 
     while not _stop_event.is_set():
         mode = await _get_user_mode(redis_client, user_id)
 
         # ── Bursty phase management ──────────────────────────────────────
-        if mode == 'bursty':
+        if mode == "bursty":
             now = time.monotonic()
             # Entering bursty mode fresh → random initial offset so users don't all burst together
-            if prev_mode != 'bursty':
-                bursty_bursting  = False
+            if prev_mode != "bursty":
+                bursty_bursting = False
                 bursty_phase_end = now + random.uniform(0, BURSTY_PAUSE_MAX)
             elif now >= bursty_phase_end:
-                bursty_bursting  = not bursty_bursting
-                duration = (random.uniform(BURSTY_BURST_MIN, BURSTY_BURST_MAX)
-                            if bursty_bursting else
-                            random.uniform(BURSTY_PAUSE_MIN, BURSTY_PAUSE_MAX))
+                bursty_bursting = not bursty_bursting
+                duration = (
+                    random.uniform(BURSTY_BURST_MIN, BURSTY_BURST_MAX)
+                    if bursty_bursting
+                    else random.uniform(BURSTY_PAUSE_MIN, BURSTY_PAUSE_MAX)
+                )
                 bursty_phase_end = now + duration
 
             if not bursty_bursting:
@@ -200,28 +211,32 @@ async def _user_loop(session: aiohttp.ClientSession, user_id: int, redis_client)
                 while time.monotonic() < bursty_phase_end and not _stop_event.is_set():
                     await asyncio.sleep(min(1.0, bursty_phase_end - time.monotonic()))
                     new_mode = await _get_user_mode(redis_client, user_id)
-                    if new_mode != 'bursty':
+                    if new_mode != "bursty":
                         mode = new_mode
                         break
                 prev_mode = mode
-                continue   # re-enter loop to recheck phase / handle mode change
+                continue  # re-enter loop to recheck phase / handle mode change
         else:
-            bursty_bursting  = False
+            bursty_bursting = False
             bursty_phase_end = 0.0
 
         prev_mode = mode
 
         # ── Determine RPM for this request ──────────────────────────────
-        if mode == 'spammer':
+        if mode == "spammer":
             rpm = SPAMMER_RPM
-        elif mode == 'bursty':
+        elif mode == "bursty":
             rpm = BURSTY_RPM
         else:
             baseline = await _get_baseline_rpm(redis_client)
             pattern = await _get_usage_pattern(redis_client)
-            rpm = _bell(max(1, baseline - VARIABILITY), baseline + VARIABILITY) * get_usage_multiplier(pattern)
+            rpm = _bell(
+                max(1, baseline - VARIABILITY), baseline + VARIABILITY
+            ) * get_usage_multiplier(pattern)
         prompt = generate_prompt(1)[0]
-        input_tokens = _count_tokens(prompt)  # pre-count so 429s still show real token usage
+        input_tokens = _count_tokens(
+            prompt
+        )  # pre-count so 429s still show real token usage
         t0 = time.monotonic()
         success = False
         error = ""
@@ -243,12 +258,19 @@ async def _user_loop(session: aiohttp.ClientSession, user_id: int, redis_client)
                     "temperature": 1,
                     "n": 1,
                 },
-                headers={"Authorization": f"Bearer {await _get_user_api_key(redis_client, user_id)}", "X-User-ID": str(user_id)},
+                headers={
+                    "Authorization": f"Bearer {await _get_user_api_key(redis_client, user_id)}",
+                    "X-User-ID": str(user_id),
+                },
                 timeout=aiohttp.ClientTimeout(total=120),
             ) as resp:
                 status_code = resp.status
-                rpm_remaining = int(resp.headers.get("x-ratelimit-remaining-requests", -1))
-                tpm_remaining = int(resp.headers.get("x-ratelimit-remaining-tokens", -1))
+                rpm_remaining = int(
+                    resp.headers.get("x-ratelimit-remaining-requests", -1)
+                )
+                tpm_remaining = int(
+                    resp.headers.get("x-ratelimit-remaining-tokens", -1)
+                )
                 if resp.status == 429:
                     body = await resp.json()
                     error_type = body.get("error", {}).get("type", "")
@@ -290,20 +312,23 @@ async def _user_loop(session: aiohttp.ClientSession, user_id: int, redis_client)
                 "avg_latency_ms": round(lat_sum / n),
             }
 
-        await _emit("result", {
-            "user_id": user_id,
-            "status_code": status_code,
-            "latency_ms": latency_ms,
-            "input_tokens": input_tokens,
-            "output_tokens": output_tokens,
-            "success": success,
-            "error": error,
-            "rpm_remaining": rpm_remaining,
-            "tpm_remaining": tpm_remaining,
-            "total": snapshot["total"],
-            "errors": snapshot["errors"],
-            "avg_latency_ms": snapshot["avg_latency_ms"],
-        })
+        await _emit(
+            "result",
+            {
+                "user_id": user_id,
+                "status_code": status_code,
+                "latency_ms": latency_ms,
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
+                "success": success,
+                "error": error,
+                "rpm_remaining": rpm_remaining,
+                "tpm_remaining": tpm_remaining,
+                "total": snapshot["total"],
+                "errors": snapshot["errors"],
+                "avg_latency_ms": snapshot["avg_latency_ms"],
+            },
+        )
 
         # Poisson inter-arrival: exponentially distributed with the target rate as the mean.
         # Cap at 3× mean so an unlucky draw doesn't stall a user tile for ages.
@@ -313,14 +338,15 @@ async def _user_loop(session: aiohttp.ClientSession, user_id: int, redis_client)
         while time.monotonic() < deadline and not _stop_event.is_set():
             await asyncio.sleep(min(1.0, deadline - time.monotonic()))
             # Normal users: poll for mode escalation so they switch immediately
-            if mode == 'normal' and deadline - time.monotonic() > 0.5:
+            if mode == "normal" and deadline - time.monotonic() > 0.5:
                 new_mode = await _get_user_mode(redis_client, user_id)
-                if new_mode != 'normal':
+                if new_mode != "normal":
                     break
 
 
 async def _run_loop():
     import redis.asyncio as aioredis
+
     redis_client = aioredis.from_url(REDIS_URL)
     await _emit("status", {"running": True})
     try:
@@ -328,9 +354,9 @@ async def _run_loop():
         # to the backend or requests (and their backoffs) serialize on the wire.
         connector = aiohttp.TCPConnector(limit=256, limit_per_host=256)
         async with aiohttp.ClientSession(connector=connector) as session:
-            await asyncio.gather(*[
-                _user_loop(session, uid, redis_client) for uid in USER_IDS
-            ])
+            await asyncio.gather(
+                *[_user_loop(session, uid, redis_client) for uid in USER_IDS]
+            )
     finally:
         await redis_client.aclose()
     await _emit("status", {"running": False})

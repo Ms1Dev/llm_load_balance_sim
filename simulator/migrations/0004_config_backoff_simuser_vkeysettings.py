@@ -4,57 +4,87 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('simulator', '0003_config_stats_window_minutes'),
+        ("simulator", "0003_config_stats_window_minutes"),
     ]
 
     operations = [
         migrations.CreateModel(
-            name='SimUser',
+            name="SimUser",
             fields=[
-                ('id', models.PositiveIntegerField(primary_key=True, serialize=False)),
-                ('mode', models.CharField(choices=[('normal', 'Normal'), ('noisy', 'Noisy'), ('spammer', 'Spammer')], default='normal', max_length=10)),
-                ('vkey_value', models.CharField(blank=True, default='', max_length=128)),
-                ('vkey_id', models.CharField(blank=True, default='', max_length=128)),
+                ("id", models.PositiveIntegerField(primary_key=True, serialize=False)),
+                (
+                    "mode",
+                    models.CharField(
+                        choices=[
+                            ("normal", "Normal"),
+                            ("noisy", "Noisy"),
+                            ("spammer", "Spammer"),
+                        ],
+                        default="normal",
+                        max_length=10,
+                    ),
+                ),
+                (
+                    "vkey_value",
+                    models.CharField(blank=True, default="", max_length=128),
+                ),
+                ("vkey_id", models.CharField(blank=True, default="", max_length=128)),
             ],
             options={
-                'verbose_name_plural': 'Simulated Users',
-                'ordering': ['id'],
+                "verbose_name_plural": "Simulated Users",
+                "ordering": ["id"],
             },
         ),
         migrations.CreateModel(
-            name='VirtualKeySettings',
+            name="VirtualKeySettings",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('rpm_per_user', models.PositiveIntegerField(default=50)),
-                ('tpm_per_user', models.PositiveIntegerField(default=50000)),
-                ('budget_limit', models.FloatField(default=1.0)),
-                ('budget_reset', models.CharField(default='24h', max_length=10)),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                ("rpm_per_user", models.PositiveIntegerField(default=50)),
+                ("tpm_per_user", models.PositiveIntegerField(default=50000)),
+                ("budget_limit", models.FloatField(default=1.0)),
+                ("budget_reset", models.CharField(default="24h", max_length=10)),
             ],
             options={
-                'verbose_name': 'Virtual Key Settings',
-                'verbose_name_plural': 'Virtual Key Settings',
+                "verbose_name": "Virtual Key Settings",
+                "verbose_name_plural": "Virtual Key Settings",
             },
         ),
         migrations.AddField(
-            model_name='config',
-            name='active_strategies',
-            field=models.CharField(blank=True, default='', max_length=64),
+            model_name="config",
+            name="active_strategies",
+            field=models.CharField(blank=True, default="", max_length=64),
         ),
         migrations.AlterField(
-            model_name='config',
-            name='rpm_limit',
-            field=models.PositiveIntegerField(default=200, help_text='Maximum requests per minute allowed by the vLLM.'),
+            model_name="config",
+            name="rpm_limit",
+            field=models.PositiveIntegerField(
+                default=200,
+                help_text="Maximum requests per minute allowed by the vLLM.",
+            ),
         ),
         migrations.AlterField(
-            model_name='config',
-            name='stats_window_minutes',
-            field=models.PositiveIntegerField(default=1, help_text='Legacy field; user tiles use a fixed 60s window for RPM and avg latency.'),
+            model_name="config",
+            name="stats_window_minutes",
+            field=models.PositiveIntegerField(
+                default=1,
+                help_text="Legacy field; user tiles use a fixed 60s window for RPM and avg latency.",
+            ),
         ),
         migrations.AlterField(
-            model_name='config',
-            name='tpm_limit',
-            field=models.PositiveIntegerField(default=200000, help_text='Maximum tokens per minute allowed by the vLLM.'),
+            model_name="config",
+            name="tpm_limit",
+            field=models.PositiveIntegerField(
+                default=200000,
+                help_text="Maximum tokens per minute allowed by the vLLM.",
+            ),
         ),
     ]

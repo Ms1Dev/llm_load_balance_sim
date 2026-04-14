@@ -4,50 +4,52 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('simulator', '0011_config_usage_pattern_alter_config_active_strategies_and_more'),
+        (
+            "simulator",
+            "0011_config_usage_pattern_alter_config_active_strategies_and_more",
+        ),
     ]
 
     operations = [
         migrations.RenameField(
-            model_name='virtualkeysettings',
-            old_name='pro_rpm_per_user',
-            new_name='pro_requests_per_user',
+            model_name="virtualkeysettings",
+            old_name="pro_rpm_per_user",
+            new_name="pro_requests_per_user",
         ),
         migrations.RenameField(
-            model_name='virtualkeysettings',
-            old_name='pro_tpm_per_user',
-            new_name='pro_tokens_per_user',
+            model_name="virtualkeysettings",
+            old_name="pro_tpm_per_user",
+            new_name="pro_tokens_per_user",
         ),
         migrations.RenameField(
-            model_name='virtualkeysettings',
-            old_name='rpm_per_user',
-            new_name='requests_per_user',
+            model_name="virtualkeysettings",
+            old_name="rpm_per_user",
+            new_name="requests_per_user",
         ),
         migrations.RenameField(
-            model_name='virtualkeysettings',
-            old_name='tpm_per_user',
-            new_name='tokens_per_user',
+            model_name="virtualkeysettings",
+            old_name="tpm_per_user",
+            new_name="tokens_per_user",
         ),
         migrations.AddField(
-            model_name='virtualkeysettings',
-            name='pro_requests_reset',
-            field=models.CharField(default='24h', max_length=10),
+            model_name="virtualkeysettings",
+            name="pro_requests_reset",
+            field=models.CharField(default="24h", max_length=10),
         ),
         migrations.AddField(
-            model_name='virtualkeysettings',
-            name='pro_tokens_reset',
-            field=models.CharField(default='24h', max_length=10),
+            model_name="virtualkeysettings",
+            name="pro_tokens_reset",
+            field=models.CharField(default="24h", max_length=10),
         ),
         migrations.AddField(
-            model_name='virtualkeysettings',
-            name='requests_reset',
-            field=models.CharField(default='24h', max_length=10),
+            model_name="virtualkeysettings",
+            name="requests_reset",
+            field=models.CharField(default="24h", max_length=10),
         ),
         migrations.AddField(
-            model_name='virtualkeysettings',
-            name='tokens_reset',
-            field=models.CharField(default='24h', max_length=10),
+            model_name="virtualkeysettings",
+            name="tokens_reset",
+            field=models.CharField(default="24h", max_length=10),
         ),
     ]

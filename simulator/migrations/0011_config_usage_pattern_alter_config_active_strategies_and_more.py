@@ -4,45 +4,47 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('simulator', '0010_merge_0009_alter_simuser_mode_0009_simuser_spend'),
+        ("simulator", "0010_merge_0009_alter_simuser_mode_0009_simuser_spend"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='config',
-            name='usage_pattern',
-            field=models.CharField(default='sine_wave', max_length=32),
+            model_name="config",
+            name="usage_pattern",
+            field=models.CharField(default="sine_wave", max_length=32),
         ),
         migrations.AlterField(
-            model_name='config',
-            name='active_strategies',
-            field=models.CharField(blank=True, default='backoff', max_length=64),
+            model_name="config",
+            name="active_strategies",
+            field=models.CharField(blank=True, default="backoff", max_length=64),
         ),
         migrations.AlterField(
-            model_name='config',
-            name='rpm_limit',
-            field=models.PositiveIntegerField(default=500, help_text='Maximum requests per minute allowed by the vLLM.'),
+            model_name="config",
+            name="rpm_limit",
+            field=models.PositiveIntegerField(
+                default=500,
+                help_text="Maximum requests per minute allowed by the vLLM.",
+            ),
         ),
         migrations.AlterField(
-            model_name='virtualkeysettings',
-            name='pro_rpm_per_user',
+            model_name="virtualkeysettings",
+            name="pro_rpm_per_user",
             field=models.PositiveIntegerField(default=20),
         ),
         migrations.AlterField(
-            model_name='virtualkeysettings',
-            name='pro_tpm_per_user',
+            model_name="virtualkeysettings",
+            name="pro_tpm_per_user",
             field=models.PositiveIntegerField(default=20000),
         ),
         migrations.AlterField(
-            model_name='virtualkeysettings',
-            name='rpm_per_user',
+            model_name="virtualkeysettings",
+            name="rpm_per_user",
             field=models.PositiveIntegerField(default=10),
         ),
         migrations.AlterField(
-            model_name='virtualkeysettings',
-            name='tpm_per_user',
+            model_name="virtualkeysettings",
+            name="tpm_per_user",
             field=models.PositiveIntegerField(default=10000),
         ),
     ]

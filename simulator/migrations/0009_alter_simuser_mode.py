@@ -4,15 +4,22 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('simulator', '0008_config_normal_user_rpm'),
+        ("simulator", "0008_config_normal_user_rpm"),
     ]
 
     operations = [
         migrations.AlterField(
-            model_name='simuser',
-            name='mode',
-            field=models.CharField(choices=[('normal', 'Normal'), ('bursty', 'Bursty'), ('spammer', 'Spammer')], default='normal', max_length=10),
+            model_name="simuser",
+            name="mode",
+            field=models.CharField(
+                choices=[
+                    ("normal", "Normal"),
+                    ("bursty", "Bursty"),
+                    ("spammer", "Spammer"),
+                ],
+                default="normal",
+                max_length=10,
+            ),
         ),
     ]

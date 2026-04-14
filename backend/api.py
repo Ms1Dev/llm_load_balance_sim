@@ -1,12 +1,7 @@
 import json
 import logging
 import os
-import random
-import asyncio
 from contextlib import asynccontextmanager
-from datetime import datetime
-
-logger = logging.getLogger("api")
 
 import httpx
 import redis.asyncio as aioredis
@@ -14,92 +9,19 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from starlette.requests import ClientDisconnect
 
-BIFROST_URL      = os.environ.get("BIFROST_URL",        "http://bifrost:8080/v1")
-REDIS_URL        = os.environ.get("REDIS_URL",          "redis://redis:6379")
-COST_PER_1M_INPUT  = float(os.environ.get("COST_PER_1M_INPUT",  "0.75"))
-COST_PER_1M_OUTPUT = float(os.environ.get("COST_PER_1M_OUTPUT", "4.50"))
+from backoff import MAX_RETRIES, _parse_retry_after, sleep_backoff
+from cost import record_usage, parse_usage_from_stream
 
-MAX_RETRIES: int = 3
-BASE_DELAY: float = 2.0
-MAX_DELAY: float = 30.0
-EXPONENTIAL_BASE: float = 2.0
-JITTER: bool = True
-# Upstream Retry-After can be huge; cap so the proxy does not sleep a full minute per 429.
-RETRY_AFTER_CAP: float = float(os.environ.get("RETRY_AFTER_CAP", "15"))
+logger = logging.getLogger("api")
+
+BIFROST_URL = os.environ.get("BIFROST_URL", "http://bifrost:8080/v1")
+REDIS_URL = os.environ.get("REDIS_URL", "redis://redis:6379")
 
 _SKIP_HEADERS = {"host", "content-length", "transfer-encoding"}
 
 
-# ── Backoff ───────────────────────────────────────────────────────────────
-
-def _parse_retry_after(headers: httpx.Headers) -> float | None:
-    raw = headers.get("retry-after")
-    if not raw:
-        return None
-    try:
-        return float(raw)
-    except ValueError:
-        return None
-
-
-def _calculate_delay(attempt: int) -> float:
-    delay = BASE_DELAY * (EXPONENTIAL_BASE ** attempt)
-    delay = min(delay, MAX_DELAY)
-    if JITTER:
-        delay = delay * (0.5 + random.random())  # 0.5× – 1.5× multiplier
-    return delay
-
-
-async def _sleep_backoff(attempt: int, retry_after_s: float | None = None) -> None:
-    delay = _calculate_delay(attempt)
-    if retry_after_s is not None:
-        retry_after_s = min(retry_after_s, RETRY_AFTER_CAP)
-        delay = max(delay, retry_after_s)
-    await asyncio.sleep(delay)
-
-
-# ── Cost tracking ─────────────────────────────────────────────────────────
-
-async def _record_usage(redis: aioredis.Redis, user_id: str,
-                        input_tokens: int, output_tokens: int) -> None:
-    cost = (input_tokens  / 1000000 * COST_PER_1M_INPUT +
-            output_tokens / 1000000 * COST_PER_1M_OUTPUT)
-    pipe = redis.pipeline()
-    pipe.hincrbyfloat(f"usage:{user_id}:tokens", "input",  input_tokens)
-    pipe.hincrbyfloat(f"usage:{user_id}:tokens", "output", output_tokens)
-    pipe.hincrbyfloat(f"usage:{user_id}:cost",   "total",  cost)
-    pipe.hincrbyfloat("usage:global:cost",        "total",  cost)
-    await pipe.execute()
-    await redis.publish("events:usage", json.dumps({
-        "user_id":       user_id,
-        "input_tokens":  input_tokens,
-        "output_tokens": output_tokens,
-        "cost_usd":      round(cost, 6),
-        "ts":            datetime.now().isoformat(),
-    }))
-
-
-def _parse_usage_from_stream(chunks: list[bytes]) -> tuple[int, int]:
-    input_tokens = output_tokens = 0
-    for raw in chunks:
-        line = raw.decode(errors="replace").strip()
-        if not line.startswith("data: "):
-            continue
-        payload = line[6:]
-        if payload == "[DONE]":
-            continue
-        try:
-            chunk = json.loads(payload)
-            usage = chunk.get("usage")
-            if usage:
-                input_tokens  = usage.get("prompt_tokens",     0)
-                output_tokens = usage.get("completion_tokens", 0)
-        except (json.JSONDecodeError, KeyError):
-            pass
-    return input_tokens, output_tokens
-
-
 # ── App ───────────────────────────────────────────────────────────────────
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -111,7 +33,7 @@ async def lifespan(app: FastAPI):
         timeout=120.0,
         limits=limits,
     )
-    app.state.redis  = aioredis.from_url(REDIS_URL)
+    app.state.redis = aioredis.from_url(REDIS_URL)
     yield
     await app.state.client.aclose()
     await app.state.redis.aclose()
@@ -137,19 +59,19 @@ async def chat_completions(request: Request):
 
     strategies = await _get_strategies(redis)
     use_backoff = "backoff" in strategies
+    max_attempts = MAX_RETRIES + 1 if use_backoff else 1
 
     forward_headers = {
-        k: v for k, v in request.headers.items()
-        if k.lower() not in _SKIP_HEADERS
+        k: v for k, v in request.headers.items() if k.lower() not in _SKIP_HEADERS
     }
 
     client: httpx.AsyncClient = request.app.state.client
     last_response = None
-    max_attempts  = MAX_RETRIES + 1 if use_backoff else 1
 
     for attempt in range(max_attempts):
         req = client.build_request(
-            "POST", "/chat/completions",
+            "POST",
+            "/chat/completions",
             content=body,
             headers=forward_headers,
         )
@@ -166,24 +88,36 @@ async def chat_completions(request: Request):
             last_response = (upstream_resp.status_code, error_body)
 
             # Publish retry event so dashboard can show backoff activity
-            await redis.publish("events:backoff", json.dumps({
-                "user_id": user_id,
-                "attempt": attempt,
-                "status":  upstream_resp.status_code,
-                "ts":      datetime.now().isoformat(),
-            }))
+            from datetime import datetime
+
+            await redis.publish(
+                "events:backoff",
+                json.dumps(
+                    {
+                        "user_id": user_id,
+                        "attempt": attempt,
+                        "status": upstream_resp.status_code,
+                        "ts": datetime.now().isoformat(),
+                    }
+                ),
+            )
 
             if attempt >= max_attempts - 1:
                 break
 
             retry_after = _parse_retry_after(upstream_resp.headers)
-            await _sleep_backoff(attempt, retry_after_s=retry_after)
+            await sleep_backoff(attempt, retry_after_s=retry_after)
             continue
 
         # Non-retryable error (4xx etc) — return immediately
         error_body = await upstream_resp.aread()
         await upstream_resp.aclose()
-        logger.warning("Bifrost %s for user %s: %s", upstream_resp.status_code, user_id, error_body.decode()[:500])
+        logger.warning(
+            "Bifrost %s for user %s: %s",
+            upstream_resp.status_code,
+            user_id,
+            error_body.decode()[:500],
+        )
         return JSONResponse(
             content=json.loads(error_body),
             status_code=upstream_resp.status_code,
@@ -199,7 +133,8 @@ async def chat_completions(request: Request):
 
     # Stream successful response back
     response_headers = {
-        k: v for k, v in upstream_resp.headers.items()
+        k: v
+        for k, v in upstream_resp.headers.items()
         if k.lower() not in {"content-length", "transfer-encoding", "content-encoding"}
     }
 
@@ -212,9 +147,9 @@ async def chat_completions(request: Request):
                 yield chunk
         finally:
             await upstream_resp.aclose()
-            input_tokens, output_tokens = _parse_usage_from_stream(accumulated)
+            input_tokens, output_tokens = parse_usage_from_stream(accumulated)
             if input_tokens or output_tokens:
-                await _record_usage(redis, user_id, input_tokens, output_tokens)
+                await record_usage(redis, user_id, input_tokens, output_tokens)
 
     return StreamingResponse(
         proxy_stream(),
@@ -226,9 +161,10 @@ async def chat_completions(request: Request):
 
 # ── Config endpoints (called by dashboard UI) ─────────────────────────────
 
+
 @app.post("/config/backoff")
 async def set_backoff(request: Request):
-    body    = await request.json()
+    body = await request.json()
     enabled = "1" if body.get("enabled") else "0"
     await request.app.state.redis.set("config:backoff_enabled", enabled)
     return {"backoff_enabled": enabled == "1"}
@@ -242,16 +178,17 @@ async def get_backoff(request: Request):
 
 # ── Usage endpoints ───────────────────────────────────────────────────────
 
+
 @app.get("/usage/{user_id}")
 async def get_user_usage(user_id: str, request: Request):
     redis: aioredis.Redis = request.app.state.redis
     tokens = await redis.hmget(f"usage:{user_id}:tokens", "input", "output")
-    cost   = await redis.hget(f"usage:{user_id}:cost", "total")
+    cost = await redis.hget(f"usage:{user_id}:cost", "total")
     return {
-        "user_id":       user_id,
-        "input_tokens":  int(float(tokens[0] or 0)),
+        "user_id": user_id,
+        "input_tokens": int(float(tokens[0] or 0)),
         "output_tokens": int(float(tokens[1] or 0)),
-        "cost_usd":      round(float(cost or 0), 6),
+        "cost_usd": round(float(cost or 0), 6),
     }
 
 

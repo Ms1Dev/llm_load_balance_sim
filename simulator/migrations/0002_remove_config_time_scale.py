@@ -4,14 +4,13 @@ from django.db import migrations
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('simulator', '0001_initial'),
+        ("simulator", "0001_initial"),
     ]
 
     operations = [
         migrations.RemoveField(
-            model_name='config',
-            name='time_scale',
+            model_name="config",
+            name="time_scale",
         ),
     ]

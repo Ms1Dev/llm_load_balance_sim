@@ -4,15 +4,18 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('simulator', '0005_populate_sim_users'),
+        ("simulator", "0005_populate_sim_users"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='simuser',
-            name='tier',
-            field=models.CharField(choices=[('basic', 'Basic'), ('pro', 'Pro')], default='basic', max_length=8),
+            model_name="simuser",
+            name="tier",
+            field=models.CharField(
+                choices=[("basic", "Basic"), ("pro", "Pro")],
+                default="basic",
+                max_length=8,
+            ),
         ),
     ]

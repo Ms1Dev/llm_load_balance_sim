@@ -26,9 +26,9 @@ RETRY_AFTER_SECONDS = float(os.environ.get("RATE_LIMIT_RETRY_AFTER", "5"))
 # Simulated latency. BASE_LATENCY_S is the mean response time; random jitter of
 # ±LATENCY_JITTER (fraction) is applied. TOKEN_LATENCY_S_PER_1K adds extra time
 # proportional to input length, simulating prompt-processing cost.
-BASE_LATENCY_S        = float(os.environ.get("BASE_LATENCY_S",        "0.3"))
+BASE_LATENCY_S = float(os.environ.get("BASE_LATENCY_S", "0.3"))
 TOKEN_LATENCY_S_PER_100 = float(os.environ.get("TOKEN_LATENCY_S_PER_100", "0.01"))
-LATENCY_JITTER        = float(os.environ.get("LATENCY_JITTER",        "0.4"))
+LATENCY_JITTER = float(os.environ.get("LATENCY_JITTER", "0.4"))
 
 _config_cache: dict = {}
 _config_updated_at: float = 0.0
@@ -67,10 +67,10 @@ async def get_config(redis_client) -> dict:
     global _config_cache, _config_updated_at
     now = time.time()
     if now - _config_updated_at > _CONFIG_TTL:
-        vals = await redis_client.mget('config:rpm_limit', 'config:tpm_limit')
+        vals = await redis_client.mget("config:rpm_limit", "config:tpm_limit")
         _config_cache = {
-            'rpm_limit':  int(vals[0])   if vals[0] else DEFAULT_RPM_LIMIT,
-            'tpm_limit':  int(vals[1])   if vals[1] else DEFAULT_TPM_LIMIT,
+            "rpm_limit": int(vals[0]) if vals[0] else DEFAULT_RPM_LIMIT,
+            "tpm_limit": int(vals[1]) if vals[1] else DEFAULT_TPM_LIMIT,
         }
         _config_updated_at = now
     return _config_cache
@@ -83,8 +83,14 @@ async def sliding_window_try_consume(
     now = time.time()
     member = f"{uuid.uuid4()}:{cost}"
     result = await redis_client.eval(
-        _SLIDING_WINDOW_SCRIPT, 1, key,
-        limit, cost, now - window_seconds, now, member,
+        _SLIDING_WINDOW_SCRIPT,
+        1,
+        key,
+        limit,
+        cost,
+        now - window_seconds,
+        now,
+        member,
     )
     return bool(result[0]), int(result[1])
 
@@ -140,22 +146,28 @@ async def chat_completions(request: Request):
 
     redis_client: aioredis.Redis = request.app.state.redis
     cfg = await get_config(redis_client)
-    rpm_limit = cfg['rpm_limit']
-    tpm_limit = cfg['tpm_limit']
+    rpm_limit = cfg["rpm_limit"]
+    tpm_limit = cfg["tpm_limit"]
 
     # RPM: atomic check-and-consume. Every attempt counts, matching OpenAI behaviour.
     rpm_ok, rpm_remaining = await sliding_window_try_consume(
-        redis_client, "rpm:sliding", rpm_limit, cost=1, window_seconds=SLIDING_WINDOW_SECONDS
+        redis_client,
+        "rpm:sliding",
+        rpm_limit,
+        cost=1,
+        window_seconds=SLIDING_WINDOW_SECONDS,
     )
-    await redis_client.set('status:rpm_remaining', rpm_remaining, ex=120)
+    await redis_client.set("status:rpm_remaining", rpm_remaining, ex=120)
     if not rpm_ok:
         return JSONResponse(
             status_code=429,
-            content={"error": {
-                "message": f"Rate limit exceeded: {rpm_limit} RPM.",
-                "type": "requests",
-                "code": "rate_limit_exceeded",
-            }},
+            content={
+                "error": {
+                    "message": f"Rate limit exceeded: {rpm_limit} RPM.",
+                    "type": "requests",
+                    "code": "rate_limit_exceeded",
+                }
+            },
             headers={
                 "Retry-After": str(max(1, int(RETRY_AFTER_SECONDS))),
                 "x-ratelimit-limit-requests": str(rpm_limit),
@@ -165,17 +177,23 @@ async def chat_completions(request: Request):
 
     # TPM: atomic check-and-consume. RPM slot already spent even if this fails.
     tpm_ok, tpm_remaining = await sliding_window_try_consume(
-        redis_client, "tpm:sliding", tpm_limit, cost=tokens_to_reserve, window_seconds=SLIDING_WINDOW_SECONDS
+        redis_client,
+        "tpm:sliding",
+        tpm_limit,
+        cost=tokens_to_reserve,
+        window_seconds=SLIDING_WINDOW_SECONDS,
     )
-    await redis_client.set('status:tpm_remaining', tpm_remaining, ex=120)
+    await redis_client.set("status:tpm_remaining", tpm_remaining, ex=120)
     if not tpm_ok:
         return JSONResponse(
             status_code=429,
-            content={"error": {
-                "message": f"Rate limit exceeded: {tpm_limit} TPM.",
-                "type": "tokens",
-                "code": "rate_limit_exceeded",
-            }},
+            content={
+                "error": {
+                    "message": f"Rate limit exceeded: {tpm_limit} TPM.",
+                    "type": "tokens",
+                    "code": "rate_limit_exceeded",
+                }
+            },
             headers={
                 "Retry-After": str(max(1, int(RETRY_AFTER_SECONDS))),
                 "x-ratelimit-limit-tokens": str(tpm_limit),
@@ -193,41 +211,68 @@ async def chat_completions(request: Request):
     await simulate_latency(input_tokens)
 
     upstream_headers = {
-        k: v for k, v in request.headers.items()
+        k: v
+        for k, v in request.headers.items()
         if k.lower() not in ("host", "content-length", "transfer-encoding")
     }
     client: httpx.AsyncClient = request.app.state.client
 
     if not stream:
-        response = await client.post("/v1/chat/completions", json=body, headers=upstream_headers)
+        response = await client.post(
+            "/v1/chat/completions", json=body, headers=upstream_headers
+        )
         data = response.json()
         content = (data.get("choices") or [{}])[0].get("message", {}).get("content", "")
         output_tokens = estimate_tokens(content)
-        print(f"[vLLM] rpm_remaining={rpm_remaining} tpm_remaining={tpm_remaining} input={input_tokens} output={output_tokens} reserved={tokens_to_reserve}", flush=True)
-        return JSONResponse(content=data, status_code=response.status_code, headers=rl_headers)
+        print(
+            f"[vLLM] rpm_remaining={rpm_remaining} tpm_remaining={tpm_remaining} input={input_tokens} output={output_tokens} reserved={tokens_to_reserve}",
+            flush=True,
+        )
+        return JSONResponse(
+            content=data, status_code=response.status_code, headers=rl_headers
+        )
 
     async def stream_response():
         text, output_tokens = pre_text, pre_output_tokens
         resp_id = f"chatcmpl-{uuid.uuid4().hex}"
 
-        yield "data: " + json.dumps({
-            "id": resp_id,
-            "object": "chat.completion.chunk",
-            "choices": [{"index": 0, "delta": {"content": text}, "finish_reason": None}],
-        }) + "\n"
+        yield (
+            "data: "
+            + json.dumps(
+                {
+                    "id": resp_id,
+                    "object": "chat.completion.chunk",
+                    "choices": [
+                        {"index": 0, "delta": {"content": text}, "finish_reason": None}
+                    ],
+                }
+            )
+            + "\n"
+        )
 
-        yield "data: " + json.dumps({
-            "choices": [],
-            "usage": {
-                "prompt_tokens": input_tokens,
-                "completion_tokens": output_tokens,
-                "total_tokens": input_tokens + output_tokens,
-            },
-        }) + "\n"
+        yield (
+            "data: "
+            + json.dumps(
+                {
+                    "choices": [],
+                    "usage": {
+                        "prompt_tokens": input_tokens,
+                        "completion_tokens": output_tokens,
+                        "total_tokens": input_tokens + output_tokens,
+                    },
+                }
+            )
+            + "\n"
+        )
         yield "data: [DONE]\n"
-        print(f"[vLLM] rpm_remaining={rpm_remaining} tpm_remaining={tpm_remaining} input={input_tokens} output={output_tokens} reserved={tokens_to_reserve}", flush=True)
+        print(
+            f"[vLLM] rpm_remaining={rpm_remaining} tpm_remaining={tpm_remaining} input={input_tokens} output={output_tokens} reserved={tokens_to_reserve}",
+            flush=True,
+        )
 
-    return StreamingResponse(stream_response(), media_type="text/event-stream", headers=rl_headers)
+    return StreamingResponse(
+        stream_response(), media_type="text/event-stream", headers=rl_headers
+    )
 
 
 @app.get("/health")

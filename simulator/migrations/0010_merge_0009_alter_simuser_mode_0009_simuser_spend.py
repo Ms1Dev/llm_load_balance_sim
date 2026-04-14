@@ -4,11 +4,9 @@ from django.db import migrations
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('simulator', '0009_alter_simuser_mode'),
-        ('simulator', '0009_simuser_spend'),
+        ("simulator", "0009_alter_simuser_mode"),
+        ("simulator", "0009_simuser_spend"),
     ]
 
-    operations = [
-    ]
+    operations = []
