@@ -434,7 +434,7 @@ def _bifrost_create_key(
 def assign_virtual_keys(request):
     # Always start fresh: delete existing keys from Bifrost and clear DB
     _delete_all_bifrost_keys()
-    SimUser.objects.all().update(vkey_value="", vkey_id="")
+    SimUser.objects.filter(id__in=SIM_USER_IDS).update(vkey_value="", vkey_id="")
 
     data = json.loads(request.body)
     basic_requests = max(1, int(data.get("basic_requests", data.get("basic_rpm", 10))))
@@ -450,7 +450,7 @@ def assign_virtual_keys(request):
     pro_budget = max(0.01, float(data.get("pro_budget", 5.0)))
     pro_budget_reset = data.get("pro_budget_reset", "24h")
 
-    users = list(SimUser.objects.all())
+    users = list(SimUser.objects.filter(id__in=SIM_USER_IDS))
     pro_ids = {u.id for u in users if u.tier == SimUser.TIER_PRO}
 
     def _params(uid):
@@ -684,7 +684,7 @@ def _delete_all_bifrost_keys():
 @require_POST
 def clear_virtual_keys(request):
     _delete_all_bifrost_keys()
-    SimUser.objects.all().update(vkey_value="", vkey_id="")
+    SimUser.objects.filter(id__in=SIM_USER_IDS).update(vkey_value="", vkey_id="")
     r = redis_sync.from_url(REDIS_URL)
     SimUser.sync_all_to_redis(r)
     r.close()
