@@ -68,7 +68,7 @@ class Migration(migrations.Migration):
             name="rpm_limit",
             field=models.PositiveIntegerField(
                 default=200,
-                help_text="Maximum requests per minute allowed by the vLLM.",
+                help_text="Maximum requests per minute allowed by the mock LLM.",
             ),
         ),
         migrations.AlterField(
@@ -84,7 +84,7 @@ class Migration(migrations.Migration):
             name="tpm_limit",
             field=models.PositiveIntegerField(
                 default=200000,
-                help_text="Maximum tokens per minute allowed by the vLLM.",
+                help_text="Maximum tokens per minute allowed by the mock LLM.",
             ),
         ),
     ]

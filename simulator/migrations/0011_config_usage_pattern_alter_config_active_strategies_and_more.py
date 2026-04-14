@@ -24,7 +24,7 @@ class Migration(migrations.Migration):
             name="rpm_limit",
             field=models.PositiveIntegerField(
                 default=500,
-                help_text="Maximum requests per minute allowed by the vLLM.",
+                help_text="Maximum requests per minute allowed by the mock LLM.",
             ),
         ),
         migrations.AlterField(

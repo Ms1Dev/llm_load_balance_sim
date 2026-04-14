@@ -30,14 +30,14 @@ class Migration(migrations.Migration):
                     "rpm_limit",
                     models.PositiveIntegerField(
                         default=30,
-                        help_text="Maximum requests per minute allowed by the vLLM.",
+                        help_text="Maximum requests per minute allowed by the mock LLM.",
                     ),
                 ),
                 (
                     "tpm_limit",
                     models.PositiveIntegerField(
                         default=10000,
-                        help_text="Maximum tokens per minute allowed by the vLLM.",
+                        help_text="Maximum tokens per minute allowed by the mock LLM.",
                     ),
                 ),
             ],

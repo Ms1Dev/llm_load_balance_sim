@@ -9,7 +9,7 @@
     "providers": {
         "openai": {
             "network_config": {
-                "base_url": "http://v_llm:8002"
+                "base_url": "http://mock_llm:8002"
             },
             "keys": [
                 {

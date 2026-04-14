@@ -9,11 +9,11 @@ REDIS_URL = os.environ.get("REDIS_URL", "redis://redis:6379")
 class Config(models.Model):
     rpm_limit = models.PositiveIntegerField(
         default=500,
-        help_text="Maximum requests per minute allowed by the vLLM.",
+        help_text="Maximum requests per minute allowed by the mock LLM.",
     )
     tpm_limit = models.PositiveIntegerField(
         default=200000,
-        help_text="Maximum tokens per minute allowed by the vLLM.",
+        help_text="Maximum tokens per minute allowed by the mock LLM.",
     )
     stats_window_minutes = models.PositiveIntegerField(
         default=1,

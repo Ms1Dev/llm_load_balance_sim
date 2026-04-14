@@ -75,13 +75,13 @@ services:
     depends_on:
       db:
         condition: service_healthy
-      v_llm:
+      mock_llm:
         condition: service_started
 
-  v_llm:
+  mock_llm:
     build:
       context: .
-      dockerfile: vLLM/Dockerfile
+      dockerfile: mockLLM/Dockerfile
     ports:
       - "8002:8002"
     environment:

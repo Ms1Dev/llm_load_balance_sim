@@ -225,7 +225,7 @@ async def chat_completions(request: Request):
         content = (data.get("choices") or [{}])[0].get("message", {}).get("content", "")
         output_tokens = estimate_tokens(content)
         print(
-            f"[vLLM] rpm_remaining={rpm_remaining} tpm_remaining={tpm_remaining} input={input_tokens} output={output_tokens} reserved={tokens_to_reserve}",
+            f"[mockLLM] rpm_remaining={rpm_remaining} tpm_remaining={tpm_remaining} input={input_tokens} output={output_tokens} reserved={tokens_to_reserve}",
             flush=True,
         )
         return JSONResponse(
@@ -266,7 +266,7 @@ async def chat_completions(request: Request):
         )
         yield "data: [DONE]\n"
         print(
-            f"[vLLM] rpm_remaining={rpm_remaining} tpm_remaining={tpm_remaining} input={input_tokens} output={output_tokens} reserved={tokens_to_reserve}",
+            f"[mockLLM] rpm_remaining={rpm_remaining} tpm_remaining={tpm_remaining} input={input_tokens} output={output_tokens} reserved={tokens_to_reserve}",
             flush=True,
         )
 

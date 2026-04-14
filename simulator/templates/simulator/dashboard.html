@@ -872,7 +872,7 @@ async function saveConfig() {
             rpmChartData = rpmChartData.filter(p => p.x >= chartCutoff);
             tpmChartData = tpmChartData.filter(p => p.x >= chartCutoff);
 
-            // RL-window used: limit minus remaining, from the vLLM's own sliding window headers
+            // RL-window used: limit minus remaining, from the mock LLM's own sliding window headers
             if (latestRpmRemaining !== null) {
                 rpmUsedData.push({ x: now, y: currentRpmLimit - latestRpmRemaining });
                 rpmUsedData = rpmUsedData.filter(p => p.x >= chartCutoff);
@@ -946,7 +946,7 @@ async function saveConfig() {
             // input_tokens is pre-counted before the request, so 429s still carry real token usage
             eventLog.push({ ts: Date.now(), tokens: d.input_tokens + (d.success ? d.output_tokens : 0) });
 
-            // Track the vLLM's own remaining counters for the orange RL-window line
+            // Track the mock LLM's own remaining counters for the orange RL-window line
             if (d.rpm_remaining >= 0) latestRpmRemaining = d.rpm_remaining;
             if (d.tpm_remaining >= 0) latestTpmRemaining = d.tpm_remaining;
 
